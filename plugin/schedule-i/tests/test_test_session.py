@@ -82,8 +82,12 @@ class SessionTests(unittest.TestCase):
                     raise OSError("injected listener cleanup failure")
         argv = ["--root", str(root), "--dll", str(source), "--evidence", str(evidence), "--saves", str(saves),
                 "--packrat", "PackRat-Mono.dll", "--execute", "--seconds", "30"]
+        # Model the driver's Windows guard without changing the host's pathlib/os module.
+        # Processes, listener and game remain fakes on every CI host.
+        fake_os = SimpleNamespace(name="nt", path=session.os.path, replace=session.os.replace)
         with patch.object(session, "ensure_no_game") as guard, patch.object(session, "LocalTestServer", Server), \
-                patch.object(session.subprocess, "Popen", return_value=game) as popen:
+                patch.object(session.subprocess, "Popen", return_value=game) as popen, \
+                patch.object(session, "os", fake_os):
             code = session.main(argv)
         popen.assert_called_once()  # fake Popen only; no executable was launched
         state = json.loads((evidence / "state.json").read_text())
