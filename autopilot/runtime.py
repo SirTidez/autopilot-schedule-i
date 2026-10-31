@@ -648,6 +648,9 @@ class Runtime:
                    max_seconds=self.max_seconds)
         self.still("episode_start")
         end = {"reason": "", "status": None}
+        if self.stop():
+            end["reason"] = "stopped"
+            return self.finish(end, None)
         try:
             h.setup(g)
         except Exception as e:

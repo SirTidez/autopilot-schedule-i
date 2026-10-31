@@ -569,6 +569,14 @@ def load_user_keys():
     account.load_user_settings()
 
 
+def _reject_schedule_i_editor(link, hello=None):
+    """Retail sessions must fail before credentials, classification, source export or account/memory sends."""
+    hello = (link.hello or {}) if hello is None else hello
+    if str(hello.get("engine", "")).strip().lower() == "schedule_i":
+        raise RuntimeError("Use autopilot.schedule_i_harness for Schedule I; "
+                           "editor/provider/account/source routes are disabled")
+
+
 def run_prompt(link, prompt, path=None, model=None, timeout=None, stop=None, sent=None, steering=None, kind=None,
                play_minutes=None, trace=None, desk=None, level=None, aura_model=None, disable_premium_models=False,
                feed=None, explore_minutes=None, design_brief=None):
@@ -596,6 +604,7 @@ def run_prompt(link, prompt, path=None, model=None, timeout=None, stop=None, sen
     (telemetry.sharing, and for a run through Aura the user's Aura account), it is kept whole in the run's
     telemetry/ folder and sent once the plugin has the result (autopilot/training.py).
     """
+    _reject_schedule_i_editor(link)
     run = upload = kept = learned = recording = missing = None
     credits_refused = False
     if feed is not None:
@@ -929,6 +938,7 @@ def cmd_serve(link, args):
     """Run what the Autopilot tab starts, one run at a time, until stopped (Ctrl+C). Frames from the plugin are read
     while a run plays: Stop ends it, Steer passes the user's words on. args.control (an agents.external.Control): runs
     the user's own agent starts (`autopilot mcp`), one at a time with the tab's."""
+    _reject_schedule_i_editor(link)
     run = asked = link.hello.get("run")  # (a game started with a run on its command line)
     send_memory_state(link)
     account.send_state(link)
@@ -1015,6 +1025,7 @@ def cmd_serve(link, args):
             continue
         kind = msg.get("type")
         if kind == "hello":  # (a plugin that connected again: a new link)
+            _reject_schedule_i_editor(link, msg)
             answer_again(link, msg, done)
             send_memory_state(link, msg)
             account.send_state(link)

@@ -31,7 +31,18 @@ namespace Autopilot.ScheduleI
         public string Problem { get; private set; } = "";
         public bool Connected => ready && !dead;
         bool CanControl => controlAllowed && !controlStopped && (input == null || input.Active);
-        public static readonly string[] Ops = { "context", "session", "ping", "key", "pose", "find", "transforms", "view", "movement" };
+        public string DiagnosticState
+        {
+            get
+            {
+                var owned = input?.OwnedInputs;
+                return "Bridge: " + (Connected ? "connected" : "disconnected")
+                    + " | control: " + (CanControl ? (input == null ? "ready (unarmed)" : "armed") : "stopped/disabled")
+                    + "\nOwned inputs: " + (owned == null || owned.Length == 0 ? "none" : string.Join(", ", owned))
+                    + "\nStop reason: " + (input?.StopReason ?? (controlStopped ? "remote stop" : "none"));
+            }
+        }
+        public static readonly string[] Ops = { "context", "session", "ping", "key", "pose", "find", "transforms", "view", "movement", "ui" };
 
         public RuntimeBridge(string url, bool controlAllowed)
         {
@@ -41,6 +52,13 @@ namespace Autopilot.ScheduleI
             hello = Json.Write(new Dictionary<string, object> {
                 ["type"] = "hello", ["protocol"] = 1, ["plugin_version"] = "0.2.0", ["engine"] = "schedule_i",
                 ["engine_version"] = Application.unityVersion, ["project"] = "Schedule I", ["host"] = "game",
+                ["game_version"] = Application.version, ["game_pid"] = System.Diagnostics.Process.GetCurrentProcess().Id,
+#if MONO
+                ["runtime"] = "Mono",
+#else
+                ["runtime"] = "IL2CPP",
+#endif
+                ["loader_version"] = typeof(MelonLoader.MelonMod).Assembly.GetName().Version.ToString(),
                 ["adapter"] = "melonloader", ["source_export"] = false, ["share"] = false,
                 ["features"] = new[] { "timed_hold", "schedule_i_runtime" }, ["capabilities"] = Ops,
                 ["input"] = new Dictionary<string, object> { ["keys"] = controlAllowed, ["handling"] = "os",
@@ -135,6 +153,7 @@ namespace Autopilot.ScheduleI
             if (scene.handle != sceneHandle)
             {
                 input?.ReleaseAll();
+                RuntimeRead.ClearUiCache();
                 sceneHandle = scene.handle;
             }
             input?.Poll();
@@ -176,6 +195,7 @@ namespace Autopilot.ScheduleI
                 case "find": return RuntimeRead.Find(args);
                 case "transforms": return RuntimeRead.Transforms(args);
                 case "view": return RuntimeRead.View(args);
+                case "ui": return RuntimeRead.Ui(args);
                 case "key":
                     // Upstream missing_ops probes input support with an empty key; it must never mutate state.
                     if (Json.Str(args, "key") == "" && Json.Str(args, "mode", "press") == "press")
@@ -194,6 +214,7 @@ namespace Autopilot.ScheduleI
                     if (action == "stop") input?.Stop("session stop");
                     else if (action != "status") throw new InvalidOperationException("Retail runtime supports session status/stop only");
                     return new Dictionary<string, object> { ["running"] = true, ["control_active"] = input != null && input.Active,
+                        ["owned_inputs"] = input?.OwnedInputs ?? new string[0], ["control_stopped"] = controlStopped,
                         ["control_stop_reason"] = input?.StopReason ?? "control disabled", ["restart_supported"] = false };
                 default: throw new InvalidOperationException("unknown op: " + op + " (unsupported Schedule I runtime capability)");
             }

@@ -29,6 +29,7 @@ namespace Autopilot.ScheduleI
         int mouseCounts;
         public string StopReason { get; private set; } = "";
         public bool Active { get { lock (gate) return !stopped; } }
+        public string[] OwnedInputs { get { lock (gate) { var keys = new string[held.Count]; held.Keys.CopyTo(keys, 0); return keys; } } }
         public static readonly HashSet<string> Keys = MakeKeys();
 
         public RuntimeInput(IInputSink sink, Func<double> clock = null, bool watchdog = true)

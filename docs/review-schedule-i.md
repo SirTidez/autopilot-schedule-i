@@ -34,4 +34,30 @@ remain local; an explicitly supplied client owns any data transfer performed by 
 Additional hardening opportunity: `bridge.serve_local` currently uses the upstream unlimited WebSocket receive size.
 The `schedule-i` role should match the mod's 64 KiB message bound without changing other engine profiles.
 
-Parent owns callback-error cancellation and mouse chunking; review fixes must be coordinated to avoid overlapping writes.
+## Fixes applied after coordination
+
+- The editor `run_prompt` and service entry/rebind paths now reject Schedule I before key loading, classification,
+  feed startup, memory or account sends. Executed entry-function tests use tripwires for those side effects.
+- Pre-cancelled runs send cleanup and fail before constructing Game/Runtime or calling setup. Runtime also checks
+  its stop callback before setup. Restricted requests check cancellation and a wall deadline, and stop permanently
+  revokes non-cleanup requests. An independent daemon watchdog sends release/stop during blocked setup/observe/
+  executor work. Native leases and focus/F8 controls remain independent.
+- Callback exceptions and invalid decisions set the cancellation event and record a safety fault. No SDK/provider
+  fallback is selected. The normal kit wildcard import is SDK-free; Choice/Noul/Score constructor proxies return
+  real SDK instances only when explicitly constructed. `isinstance`/`issubclass` checks delegate to the SDK.
+  Code requiring exact SDK class identity or SDK model subclassing should explicitly import from `typesafe_sdk`.
+- Relative mouse actions are fully budgeted before dispatch, quantized, and split into at most 200 counts per
+  native request, within 4000 total counts per wrapper session. Cancellation and async faults are checked between
+  chunks. Mouse-count or request-budget rejection emits none of the rejected logical action.
+
+The optional typed `ui` read is allowed only when advertised by the connected bridge; it is not required for older
+runtime peers, and `ui_act` remains unsupported. Base capability checks still require the same nine runtime operations.
+
+Validation: 36 offline Python tests passed, including all 27 existing tests. Added regressions cover early provider
+gates, wildcard imports, pre-cancel, cleanup while setup is blocked, stop revocation, callback errors, mouse chunks
+and optional UI capability enforcement.
+No game launch, deployment, OS input or provider calls were used for this verification.
+
+The cooperative Python limitation above remains explicit: arbitrary reviewed Python can block a thread or process.
+The watchdog revokes input independently, but cannot safely kill that Python code. Hard process isolation was not
+added as an unreviewed production change. The caller should use bounded/cooperative callbacks and harness functions.

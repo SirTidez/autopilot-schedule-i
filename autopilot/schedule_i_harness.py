@@ -15,9 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
-from .schedule_i import AdapterError, seconds
+from .schedule_i import MAX_MOUSE_DELTA, MAX_MOUSE_TOTAL, MOUSE_AXES, AdapterError, seconds
 
-OPS = frozenset(("context", "session", "ping", "key", "pose", "find", "transforms", "view", "movement"))
+REQUIRED_OPS = frozenset(("context", "session", "ping", "key", "pose", "find", "transforms", "view", "movement"))
+OPTIONAL_OPS = frozenset(("ui",))  # typed hierarchy reads only; never ui_act
+OPS = REQUIRED_OPS | OPTIONAL_OPS
 
 
 @dataclass
@@ -38,12 +40,25 @@ class CallbackClient:
     sockets, model fallback or provider selection occur here; the caller owns its callback.
     """
 
-    def __init__(self, choose):
+    def __init__(self, choose, *, cancel=None, on_error=None):
         if not callable(choose):
             raise ValueError("choose must be an explicitly supplied callable")
         self.choose = choose
+        self.cancel, self.on_error = cancel, on_error
 
     def system_one(self, *, state, questions):
+        try:
+            return self._system_one(state=state, questions=questions)
+        except BaseException as e:
+            if self.cancel is not None:
+                self.cancel.set()
+            if self.on_error is not None:
+                self.on_error("Decision callback: " + str(e)[:200])
+            raise
+
+    def _system_one(self, *, state, questions):
+        if self.cancel is not None and self.cancel.is_set():
+            raise AdapterError("Decision callback cancelled")
         if set(questions) != {"pick"} or not isinstance(questions["pick"], LocalChoice):
             raise AdapterError("Extra typed questions require a separately configured SDK decision client")
         criteria = questions["pick"].criteria
@@ -63,34 +78,52 @@ class CallbackClient:
         return SimpleNamespace(choices={"pick": pick}, nouls={}, scores={}, raw={"local_callback": probabilities})
 
 
+def _stop_peer(link):
+    """Cleanup requires neither a working request/response loop nor permission to issue new actions."""
+    for frame in ({"type": "request", "id": "schedule-i-final-release", "op": "key",
+                   "args": {"mode": "release_all"}}, {"type": "stop"}):
+        try:
+            link.send(frame)
+        except Exception:
+            pass  # Native leases/disconnect watchdog remain the independent fallback.
+
+
 class RestrictedLink:
     """Typed player-profile boundary around an upstream Link, including fire-and-forget failures."""
 
-    def __init__(self, link, *, control=False):
+    def __init__(self, link, *, control=False, cancel=None, max_seconds=60):
         hello = link.hello or {}
         if (hello.get("protocol") != 1 or hello.get("engine") != "schedule_i"
                 or hello.get("adapter") != "melonloader" or hello.get("source_export") is not False
                 or getattr(link, "loopback", None) is not True):
             raise AdapterError("Expected the explicit loopback Schedule I MelonLoader protocol-1 bridge")
         capabilities = hello.get("capabilities")
-        if not isinstance(capabilities, list) or not OPS <= set(capabilities):
+        if (not isinstance(capabilities, list) or not all(isinstance(value, str) for value in capabilities)
+                or not REQUIRED_OPS <= set(capabilities)):
             raise AdapterError("MelonLoader bridge is missing required typed runtime capabilities")
         if control and (hello.get("input") or {}).get("keys") is not True:
             raise AdapterError("Game control requires the separate -AutopilotScheduleIControl launch flag")
         self.raw, self.control = link, control
+        self.capabilities = frozenset(capabilities)
+        self.cancel = cancel if cancel is not None else threading.Event()
+        self.revoked = threading.Event()
         self.requests = 0
+        self.mouse_total = 0
         self.started = time.monotonic()
-        self.lock = threading.Lock()
+        self.max_seconds = seconds(max_seconds, 60, positive=True)
+        self.lock = threading.RLock()
 
     def __getattr__(self, name):
         return getattr(self.raw, name)
 
     def check(self):
+        if self.revoked.is_set() or self.cancel.is_set():
+            raise AdapterError("Schedule I harness cancelled or stopped")
         if self.raw.closed:
             raise AdapterError("MelonLoader bridge disconnected")
         if getattr(self.raw, "async_errors", None):
             raise AdapterError("MelonLoader input/request failed: " + str(self.raw.async_errors[-1])[:200])
-        if time.monotonic() - self.started >= 60:
+        if time.monotonic() - self.started >= self.max_seconds:
             raise AdapterError("Schedule I harness wall-time budget expired")
 
     def validate(self, op, args):
@@ -98,35 +131,70 @@ class RestrictedLink:
         if op == "key" and args == {"mode": "release_all"}:
             return
         self.check()
-        if op not in OPS or not isinstance(args, dict):
+        if (not isinstance(op, str) or op not in OPS or op not in self.capabilities
+                or not isinstance(args, dict)):
             raise AdapterError("Operation is outside the typed Schedule I runtime profile")
         if op == "session" and args.get("action", "status") not in ("status", "stop"):
             raise AdapterError("No scene launch, restart, reset or game exit in the retail profile")
         if op == "key" and args.get("mode") != "release_all" and not self.control:
             raise AdapterError("Control was not explicitly enabled for this harness")
-        with self.lock:
-            self.requests += 1
-            if self.requests > 2000:
+    def frames(self, op, args):
+        """Prevalidate and charge the entire logical action before any mouse chunks are emitted."""
+        self.validate(op, args)
+        frames = [(op, dict(args))]
+        count = 0
+        if op == "key" and args.get("key") in MOUSE_AXES:
+            value = args.get("value", 1)
+            if (args.get("mode", "press") != "press" or args.get("rate", False) or "seconds" in args
+                    or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                    or abs(value) > MAX_MOUSE_TOTAL):
+                raise AdapterError("Mouse action requires finite one-shot counts within the session budget")
+            signed = int(math.copysign(math.floor(abs(value) + 0.5), value))
+            count = abs(signed)
+            if self.mouse_total + count > MAX_MOUSE_TOTAL:
+                raise AdapterError("Schedule I harness mouse count budget expired")
+            frames = []
+            remaining = signed
+            while remaining:
+                part = max(-MAX_MOUSE_DELTA, min(MAX_MOUSE_DELTA, remaining))
+                frames.append((op, dict(args, value=part)))
+                remaining -= part
+        cleanup = op == "key" and args == {"mode": "release_all"}
+        if not cleanup:
+            if self.requests + len(frames) > 2000:
                 raise AdapterError("Schedule I harness request budget expired")
+            self.requests += len(frames)
+            self.mouse_total += count
+        return frames
 
     def request(self, op, args=None, timeout=None):
         args = {} if args is None else args
-        self.validate(op, args)
-        return self.raw.request(op, args, timeout=min(2.0, timeout or 2.0))
+        seconds(2.0 if timeout is None else timeout, 60, positive=True)
+        with self.lock:
+            frames = self.frames(op, args)
+        result = {}
+        for part_op, part_args in frames:
+            if part_op == "key":
+                # Serialize actions with revocation; reads may wait up to two seconds independently.
+                with self.lock:
+                    self.validate(part_op, part_args)
+                    result = self.raw.request(part_op, part_args, timeout=min(2.0, timeout or 2.0))
+            else:
+                self.validate(part_op, part_args)
+                result = self.raw.request(part_op, part_args, timeout=min(2.0, timeout or 2.0))
+        return result
 
     def post(self, op, args=None):
         args = {} if args is None else args
-        self.validate(op, args)
-        self.raw.post(op, args)
+        with self.lock:
+            for part_op, part_args in self.frames(op, args):
+                self.validate(part_op, part_args)
+                self.raw.post(part_op, part_args)
 
     def stop(self):
-        # Cleanup bypasses expired budgets and read-only controls, so every exit can release.
-        for frame in ({"type": "request", "id": "schedule-i-final-release", "op": "key",
-                       "args": {"mode": "release_all"}}, {"type": "stop"}):
-            try:
-                self.raw.send(frame)
-            except Exception:
-                pass  # Native .6s leases and the disconnect watchdog are the independent fallback.
+        self.revoked.set()  # fail new operations immediately, even while another request is waiting
+        with self.lock:
+            _stop_peer(self.raw)
 
 
 def run_harness(link, harness, trace_path, *, choose=None, client=None, single_option=False,
@@ -145,12 +213,23 @@ def run_harness(link, harness, trace_path, *, choose=None, client=None, single_o
         raise ValueError("Choose exactly one explicit decision route: choose, client or single_option")
     if getattr(harness, "start_map", None):
         raise AdapterError("Retail Schedule I harnesses cannot request scene loading or reset")
-    bounded = RestrictedLink(link, control=control)
     cancel = cancel if cancel is not None else threading.Event()
+    bounded = RestrictedLink(link, control=control, cancel=cancel, max_seconds=max_seconds)
+    if cancel.is_set():
+        bounded.stop()
+        raise AdapterError("Schedule I harness cancelled before setup")
     game = Game(bounded, codex=None)
-    if choose is not None:
-        client = CallbackClient(choose)
     stop_fault = []
+    fault_lock = threading.Lock()
+    watchdog_done = threading.Event()
+
+    def note_fault(message):
+        with fault_lock:
+            if message not in stop_fault:
+                stop_fault.append(message)
+
+    if choose is not None:
+        client = CallbackClient(choose, cancel=cancel, on_error=note_fault)
 
     def stopped():
         if cancel.is_set():
@@ -158,9 +237,20 @@ def run_harness(link, harness, trace_path, *, choose=None, client=None, single_o
         try:
             bounded.check()
         except AdapterError as e:
-            stop_fault.append(str(e))
+            note_fault(str(e))
             return True
         return False
+
+    def watch_cleanup():
+        # This also runs during setup/observe/executor code that hasn't yielded to Runtime yet.
+        while not watchdog_done.wait(0.02):
+            try:
+                bounded.check()
+            except AdapterError as e:
+                note_fault(str(e))
+                cancel.set()
+                bounded.stop()
+                return
 
     # Requiring one option is a contract check, not a fallback that invents model choices.
     original_options = harness.options
@@ -173,34 +263,44 @@ def run_harness(link, harness, trace_path, *, choose=None, client=None, single_o
             return value
         harness.options = options
     runtime = None
+    worker = threading.Thread(target=watch_cleanup, name="schedule-i-harness-cleanup", daemon=True)
+    worker.start()
     try:
+        if control:
+            context = bounded.request("context")
+            if context.get("control_enabled") is not True:
+                raise AdapterError("MelonLoader control is disabled or latched off; no setup actions were run")
         runtime = Runtime(game, harness, str(trace_path), client=client, max_seconds=max_seconds,
                           stop=stopped, telemetry=None, choice_factory=LocalChoice if choose is not None else None)
         result = runtime.run()
         result["adapter"] = "schedule_i_melonloader"
-        result["decision_route"] = "local_callback" if choose is not None else "single_option" if single_option else "explicit_client"
+        result["decision_route"] = ("local_callback" if choose is not None
+                                    else "single_option" if single_option else "explicit_client")
         result["telemetry"] = False
         result["source_export"] = False
         result["safety_faults"] = stop_fault
         return result
     finally:
+        watchdog_done.set()
+        bounded.stop()  # revoke before teardown workers can issue further actions
         harness.options = original_options
         try:
             game.release_all()
         except Exception as e:
-            stop_fault.append("Final release: " + str(e)[:200])
+            note_fault("Final release: " + str(e)[:200])
         finally:
-            bounded.stop()
             game._pool.shutdown(wait=False, cancel_futures=True)
             if runtime is not None:
                 runtime.trace.close()
                 runtime.pool.shutdown(wait=False, cancel_futures=True)
+            worker.join(timeout=2.1)
 
 
 def preflight():
     return {"mode": "preflight", "engine": "schedule_i", "adapter": "melonloader",
             "runtime": "upstream Runtime/Harness/Option/Step", "protocol": 1, "game_touched": False,
-            "required_ops": sorted(OPS), "required_runtimes": ["IL2CPP beta", "Mono alternate-beta"],
+            "required_ops": sorted(REQUIRED_OPS), "optional_ops": sorted(OPTIONAL_OPS),
+            "required_runtimes": ["IL2CPP beta", "Mono alternate-beta"],
             "transport_dependencies": {name: importlib.util.find_spec(name) is not None
                                        for name in ("requests", "websockets")},
             "decision_routes": ["explicit local callback", "explicit SDK client", "single-option harness"],
@@ -210,7 +310,8 @@ def preflight():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--reviewed-code", action="store_true", help="explicitly permit loading the supplied local harness")
+    parser.add_argument("--reviewed-code", action="store_true",
+                        help="explicitly permit loading the supplied local harness")
     parser.add_argument("--harness", type=Path)
     parser.add_argument("--trace", type=Path)
     parser.add_argument("--control", action="store_true", help="allow inputs; game must separately opt in")
@@ -247,7 +348,7 @@ def main(argv=None):
         return 2
     finally:
         if link is not None:
-            RestrictedLink.stop(SimpleNamespace(raw=link))
+            _stop_peer(link)
             link.close("Schedule I harness finished")
             link.server.shutdown()
 

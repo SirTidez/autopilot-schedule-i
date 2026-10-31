@@ -10,6 +10,10 @@ namespace Autopilot.ScheduleI
     public static class RuntimeRead
     {
         const int ScanLimit = 2048;
+        sealed class UiNode { public GameObject Object; public string Name; }
+        static readonly Dictionary<string, UiNode> uiNodes = new Dictionary<string, UiNode>();
+        static readonly Queue<string> uiOrder = new Queue<string>();
+        public static void ClearUiCache() { uiNodes.Clear(); uiOrder.Clear(); }
         static string PathOf(GameObject go) => "runtime:" + go.scene.handle + ":" + go.GetInstanceID();
         static double Finite(double n)
         {
@@ -177,6 +181,81 @@ namespace Autopilot.ScheduleI
                 ["body"] = new Dictionary<string, object>(), ["crosshair_tested"] = false, ["oriented"] = false,
                 ["omitted"] = new[] { "occlusion", "crosshair", "touching", "sonar", "ui", "inventory", "gameplay_state" },
                 ["scan_limit"] = ScanLimit, ["truncated_possible"] = true };
+        }
+
+        // Read-only active uGUI hierarchy, including DontDestroyOnLoad canvases. No click/event/reflection calls.
+        // Names/rectangles are evidence of an active UI object, not inferred text, item contents or widget semantics.
+        public static object Ui(Dictionary<string, object> args)
+        {
+            var requested = Json.List(args, "objects");
+            if (requested != null)
+            {
+                if (requested.Count > 64) throw new ArgumentException("At most 64 tracked UI objects");
+                var exact = new List<object>();
+                var unknown = new List<object>();
+                foreach (var item in requested)
+                {
+                    if (!(item is string id)) throw new ArgumentException("UI IDs must be strings");
+                    if (uiNodes.TryGetValue(id, out var node)) exact.Add(UiElement(id, node));
+                    else unknown.Add(id);
+                }
+                return new Dictionary<string, object> { ["elements"] = exact, ["unknown_ids"] = unknown,
+                    ["exact_tracked_query"] = true, ["truncated_possible"] = false, ["actions_supported"] = false };
+            }
+            var filter = Json.Str(args, "name");
+            if (filter.Length > 128) throw new ArgumentException("UI name filter too long");
+            var limit = Math.Min(256, Math.Max(1, (int)Json.Num(args, "limit", 128)));
+            var canvases = UnityEngine.Object.FindObjectsOfType<Canvas>();
+            var queue = new Queue<Transform>();
+            var seen = new HashSet<int>();
+            for (var i = 0; i < canvases.Length && i < 32; i++)
+            {
+                var canvas = canvases[i];
+                if (canvas != null && canvas.enabled && canvas.gameObject.activeInHierarchy)
+                    queue.Enqueue(canvas.transform);
+            }
+            var elements = new List<object>();
+            var scanned = 0;
+            while (queue.Count > 0 && scanned++ < 4096 && elements.Count < limit)
+            {
+                var t = queue.Dequeue();
+                if (t == null || !seen.Add(t.GetInstanceID()) || !t.gameObject.activeInHierarchy) continue;
+                if (filter.Length == 0 || t.name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var id = PathOf(t.gameObject);
+                    if (!uiNodes.ContainsKey(id))
+                    {
+                        if (uiNodes.Count >= 256) uiNodes.Remove(uiOrder.Dequeue());
+                        uiOrder.Enqueue(id);
+                    }
+                    var node = new UiNode { Object = t.gameObject, Name = t.name };
+                    uiNodes[id] = node;
+                    elements.Add(UiElement(id, node));
+                }
+                for (var c = 0; c < t.childCount && queue.Count + scanned < 4096; c++) queue.Enqueue(t.GetChild(c));
+            }
+            return new Dictionary<string, object> { ["elements"] = elements, ["scan_limit"] = 4096,
+                ["truncated_possible"] = true, ["texts_read"] = false, ["actions_supported"] = false };
+        }
+
+        static object UiElement(string id, UiNode node)
+        {
+            var go = node.Object;
+            if (go == null) return new Dictionary<string, object> { ["id"] = id, ["name"] = node.Name,
+                ["active"] = false, ["destroyed"] = true, ["source"] = "tracked_ui_destroyed" };
+            var alpha = 1.0;
+            var ancestor = go.transform;
+            for (var a = 0; ancestor != null && a < 32; a++, ancestor = ancestor.parent)
+            {
+                var group = ancestor.GetComponent<CanvasGroup>();
+                if (group == null) continue;
+                alpha *= group.alpha;
+                if (group.ignoreParentGroups) { ancestor = null; break; }
+            }
+            return new Dictionary<string, object> { ["id"] = id, ["name"] = go.name,
+                ["active"] = go.activeInHierarchy, ["destroyed"] = false, ["ancestor_group_alpha"] = alpha,
+                ["alpha_chain_truncated"] = ancestor != null, ["occlusion_tested"] = false,
+                ["source"] = "tracked_ugui_hierarchy", ["actions_supported"] = false };
         }
     }
 }

@@ -7,8 +7,9 @@ It does **not** implement the full editor bridge or game-source export. Neither 
 signs into a service, starts a model/service, or downloads dependencies at runtime. The bridge connects only
 to an explicitly enabled local WebSocket service; the replay adapter needs no service.
 
-The current reference target is Unity 2022.3, x64 IL2CPP, MelonLoader 0.8. Mono has a separate build target;
-compilation alone does not establish compatibility with a current Mono release. No mod is automatically installed.
+Both required reference targets are Schedule I 0.4.7f12, Unity 2022.3.62f2, MelonLoader 0.7.3:
+beta IL2CPP and alternate-beta Mono. Both final builds passed. One IL2CPP bridge handshake was verified;
+live Mono loading and all gameplay/input acceptance remain unverified. No mod is automatically installed.
 
 ## MelonLoader runtime bridge
 
@@ -21,13 +22,14 @@ manual steps; there are no install hooks. The following are separate launch-time
 | `-AutopilotScheduleIControl` | Also permit bounded input; ineffective without Connect |
 | `-AutopilotScheduleIUrl=ws://127.0.0.1:8765/v1/bridge` | Optional service endpoint; only literal loopback IPs and this path are accepted |
 | `-AutopilotScheduleIObserve` | Independently enable local camera snapshot files |
+| `-AutopilotScheduleIDiagnostics` | Show local connection/control/owned-input/stop diagnostics in the game window |
 
 All are off by default. There is no auto-reconnect or service startup. Connections use `engine=schedule_i`,
 `host=game`, `adapter=melonloader`, `source_export=false`, `share=false`, and feature names `timed_hold` and
 `schedule_i_runtime`. The Python Schedule I engine provides the corresponding restricted upstream harness seam.
 
 The C# bridge supports `context`, `ping`, `session` status/stop, `key`, `pose`, `movement`, `find`, `transforms`,
-and `view`. Socket work uses background queues; Unity reads and request dispatch run in `OnUpdate`. Incoming
+`view`, and optional read-only `ui`. Socket work uses background queues; Unity reads and request dispatch run in `OnUpdate`. Incoming
 and outgoing queues are limited to 256 items, messages to 64 KiB, JSON nesting to 32, and dispatch to 32
 requests per frame. Scene hierarchy scans examine at most 2048 objects from up to eight loaded scenes;
 find/transform results cap at 128, view results at 64. Results explicitly disclose possible truncation.
@@ -50,7 +52,14 @@ A reconnect is never initiated automatically. Release failures are
 recorded in the stop reason while all remaining keys are still attempted. As with any OS input mechanism,
 forced process termination or an OS denial can prevent cleanup.
 
-There is no `rc`, arbitrary method call, UI click/tree, source/codex export, screenshot, pause, scene loading,
+The optional `ui` operation scans active uGUI Canvas hierarchies, including persistent canvases, with caps of
+32 canvases, 4096 visited nodes and 256 results. A name filter is limited to 128 characters. It reports names,
+active state and ancestor CanvasGroup alpha, not text semantics, occlusion or proof that a panel is on screen.
+Returned runtime IDs are cached (256 maximum); `ui {"objects":[ids]}` queries at most 64 tracked objects and
+reports inactive/destroyed or unknown IDs explicitly. Scene changes clear this cache. Do not infer a closed
+panel from its absence in a truncated scan. `session` status exposes `owned_inputs` for cancellation diagnostics.
+
+There is no `rc`, arbitrary method call, UI click/action, source/codex export, screenshot, pause, scene loading,
 restart, teleport, save manipulation or game SDK access. Unsupported requests return an explicit `unknown op`
 error and release input. An empty-key capability probe emits no input and does not stop existing leases.
 No Harmony patches or virtual Input System devices are installed. The bridge does not infer multiplayer
@@ -70,7 +79,7 @@ Preview validates the entire JSON file and reports the frame count. It does not 
 emit input, read the game, or contact a service. The example contains only context/ping requests.
 On managed Windows environments where the sandbox redirects the default temporary directory outside permitted
 locations, set `TMP` and `TEMP` to an explicitly writable directory before running tests.
-The C# console suite requires .NET 9 and tests fake input/endpoint policy only; it never instantiates the
+The C# console suite requires .NET 10 and tests fake input/endpoint policy only; it never instantiates the
 Win32 sink, loads Unity/MelonLoader or connects to a service.
 
 ## Runtime input, when deliberately enabled
@@ -126,7 +135,7 @@ The OS and game sensitivity settings apply; these are **not** calibrated degrees
 from Unity virtual-device deltas. `ScheduleIGame.mouse(right=..., up=...)` validates both axes before sending
 either, and `press("MouseX", value=...)` also works. No angular `turn()` or calibration is fabricated.
 
-There is no absolute pointer, gamepad, other analog axis, input-action, UI-tree, inventory, pathfinding, quest,
+There is no absolute pointer, gamepad, other analog axis, input-action, UI-action, inventory, pathfinding, quest,
 save/reset, multiplayer or arbitrary method/reflection support. Unsupported operations fail rather than return
 fabricated success. The **external replay adapter** is not the registered MelonLoader engine: it cannot satisfy upstream
 editor `bridge.REQUIRED_OPS` (`rc`, `ui`, `watch`, etc.) or safely export a retail game's source.
@@ -149,11 +158,49 @@ finally:
     backend.dispose()
 ```
 
-Only run harness code you review. No generated/downloaded harness loader is included. This API deliberately
-does not inherit the upstream privileged `Game` interface. A future autonomous integration must implement
-validated game observations and policies first, and explicitly choose any model/service it uses.
+Only run harness code you review. This external replay API does not inherit the upstream privileged `Game`
+interface. For actual upstream harness execution, use the separate restricted runner below.
 
-## Optional observer build and install
+## Original upstream harness loop
+
+`python -m autopilot.schedule_i_harness` is a non-executing preflight. Live use requires an already reviewed
+local Harness, an explicit decision route, an explicitly launched game bridge, and opt-in flags on both sides:
+
+```powershell
+python -m autopilot.schedule_i_harness --execute --reviewed-code --harness reviewed_harness.py --trace local-trace.jsonl --decision harness-callback --control --seconds 30
+```
+
+The reviewed harness must supply `choose(state, criteria)` for this callback route. Alternatively use
+`--decision single-option` for harnesses with at most one legal option. The Python `run_harness` API accepts
+a separately supplied SDK-compatible client; it never creates one or selects a provider. The runner uses the
+original Runtime/Harness/Option/Step loop, with restricted typed bridge requests and local traces. Default editor
+CLI/account/source-export routes reject this retail profile before loading keys or classifying prompts.
+
+Pre-cancellation blocks setup, every request checks cancellation/deadline/revocation, and an independent Python
+watchdog sends native stop during blocked setup/observe/executor work. Invalid local decisions cancel the run.
+Reviewed Python code is cooperative and may block a thread or process exit; native leases remain independent.
+This is not a hard process sandbox. Wildcard kit imports are SDK-free; constructing SDK question proxies or
+using a caller-owned SDK client explicitly requires that dependency. Exact SDK class identity/subclassing code
+should import the real SDK classes itself.
+
+## Reversible acceptance tooling
+
+`tools/schedule_i_test_session.py --help` describes the preview-by-default local driver. Explicit execution
+backs up and hash-verifies save/config/mod files, isolates selected mod DLLs, starts one owned game, verifies
+the bridge PID, and restores originals after verified game exit. It refuses reparse/overlapping paths, an
+existing game, unbounded backups and overwriting evidence. Unknown new files remain pending; changed originals
+are retained separately before restoration. Use it only during a coordinated single-player test window.
+
+Its typed local command file can request observations, stop, or exact-owned-HWND Windows Graphics Capture
+without desktop/audio fallback. The reviewed Pack Rat harness requires a proved newly created disposable save,
+the exact observed panel name and default B binding. It observes the same panel open and close, then can hold
+only LeftShift for an explicit cancellation check. Bag unlocking and save creation are separate operator fixture
+steps. Sent keys alone never count as observed success. Keep raw evidence/backups private.
+
+The first IL2CPP session verified loading/handshake and complete rollback, but UI access timed out before any
+commands or recording. Pack Rat behavior, live input release, video and Mono loading are still unrun.
+
+## Runtime mod build and deliberate install
 
 `Autopilot.ScheduleI.csproj` is a **MelonLoader mod**, not a Unity editor package or support library.
 `ObserverMod.cs` owns lifecycle and optional file sampling; `RuntimeBridge.cs` owns the connection/dispatch,

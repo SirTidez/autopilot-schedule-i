@@ -1,4 +1,4 @@
-// Personal Schedule I extension, Apache-2.0. Read-only Unity observations; no game methods or input hooks.
+// Personal Schedule I extension, Apache-2.0. Explicit runtime bridge; no game methods or input hooks.
 using System;
 using System.Globalization;
 using System.IO;
@@ -8,7 +8,7 @@ using MelonLoader;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-[assembly: MelonInfo(typeof(Autopilot.ScheduleI.ObserverMod), "Autopilot Schedule I Observer", "0.1.0", "SirTidez")]
+[assembly: MelonInfo(typeof(Autopilot.ScheduleI.ObserverMod), "Autopilot Schedule I", "0.2.0", "SirTidez")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
 namespace Autopilot.ScheduleI
@@ -16,6 +16,7 @@ namespace Autopilot.ScheduleI
     public sealed class ObserverMod : MelonMod
     {
         bool enabled;
+        bool diagnostics;
         double next;
         string snapshot;
         RuntimeBridge bridge;
@@ -25,6 +26,7 @@ namespace Autopilot.ScheduleI
         {
             // Separate explicit opt-ins. Never starts a service or model, installs anything or opens a listener.
             var args = Environment.GetCommandLineArgs();
+            diagnostics = args.Contains("-AutopilotScheduleIDiagnostics");
             if (args.Contains("-AutopilotScheduleIConnect"))
             {
                 var url = "ws://127.0.0.1:8765/v1/bridge";
@@ -66,6 +68,22 @@ namespace Autopilot.ScheduleI
         static string Point(Vector3 v) => "{\"X\":" + Number(v.z * 100) + ",\"Y\":" + Number(v.x * 100)
             + ",\"Z\":" + Number(v.y * 100) + "}";
         static double Wrap(double n) => (n + 540) % 360 - 180;
+
+        public override void OnGUI()
+        {
+            if (!diagnostics) return;
+            var before = GUI.depth;
+            try
+            {
+                GUI.depth = -1000;
+                var scale = Math.Max(1f, Screen.height / 1080f);
+                var style = new GUIStyle(GUI.skin.box) { fontSize = (int)(18 * scale), alignment = TextAnchor.MiddleLeft };
+                GUI.Box(new Rect(12 * scale, 12 * scale, 620 * scale, 112 * scale),
+                    "Autopilot Schedule I 0.2.0 - local diagnostics\n"
+                    + (bridge?.DiagnosticState ?? "Bridge: disabled"), style);
+            }
+            finally { GUI.depth = before; }
+        }
 
         public override void OnUpdate()
         {

@@ -1,38 +1,55 @@
-# Initial Schedule I runtime evidence
+# Schedule I runtime evidence - 2026-10-31
 
-Inspected read-only on 2026-10-31. This document records version evidence without distributing game binaries, private logs, account data, save files or absolute personal filesystem paths.
+This record separates installation discovery, reference compilation and actual loaded runtime evidence.
+Proprietary assemblies/assets, private logs, saves and absolute personal paths are excluded.
 
-## Installed Steam beta
+## Selected required targets
 
-| Evidence | Observation | Limit |
-| --- | --- | --- |
-| Steam appmanifest for app 3164500 | beta branch; installed build `25796331` | Installed manifest, not a claim about the latest public release |
-| Existing MelonLoader startup header | Schedule I `0.4.7f12`; Unity `2022.3.62f2`; Windows x64; IL2CPP | Existing log last modified 2026-10-23; no fresh game launch during discovery |
-| Loader directory and version file | `0.8.0-ci.2575`; `net6`; generated IL2CPP assemblies available | Assembly availability does not prove that a new mod will load |
-| Separate authoring ProjectVersion | Unity `2022.3.62f2` | Authoring version only |
+| Target | Installed game / Unity | Loader | Acceptance evidence |
+| --- | --- | --- | --- |
+| SIMM beta | IL2CPP 0.4.7f12 / 2022.3.62f2 | MelonLoader 0.7.3, net6 | Final build passed; actual owned-game protocol hello verified all versions/runtime/PID |
+| SIMM alternate-beta | Mono 0.4.7f12 Alternate / 2022.3.62f2 | MelonLoader 0.7.3, net35 refs | Final Mono build passed; current version independently verified by SIMM discovery; live bridge not yet tested |
 
-The earlier Unity `2022.3.32f1` reference is not the version observed in the installed game's startup header. The port targets Unity 2022.3 APIs and must still be exercised against each actual game/loader build.
+The selected alternate-beta's old retained startup log describes f6; current globalgamemanagers inspection
+identified f12. The earlier Steam-main discovery found a different loader, 0.8.0-ci.2575, and Steam build 25796331.
+That installation is not the chosen test target. Unity 2022.3.32f1 from older work is not the observed current Unity.
+Installed versions are not claims about the latest public release.
 
-## Separate Mono reference tree
+## Architecture and protocol boundary
 
-A separate alternate-beta installation contains `MonoBleedingEdge`, `Schedule I_Data/Managed`, MelonLoader `net35` and `net6`, and legacy/new Unity input assemblies. Its retained startup log is old and incomplete. Its game version and loader/runtime acceptance are **unverified**; do not describe it as the current Steam beta or evidence of current Mono support.
+Upstream `48966d174939487cc759fdf8560f2bed6e717676` assumes an editor/source-oriented playtesting system and
+optional hosted services. A shipped Unity player cannot load its editor package; a version-number change is
+insufficient. This fork uses an actual MelonLoader bridge plus the original upstream harness runtime:
 
-Use explicit reference-directory build parameters. Never copy a game's managed or generated assemblies into this repository. Build output belongs in ignored local directories and installation remains a separate manual step.
+1. The mod performs bounded typed Unity scene/camera/controller-candidate and optional uGUI reads on the main
+   thread. It connects only to an explicitly enabled literal-loopback WebSocket, identifies runtime/version/PID,
+   and accepts no arbitrary reflection/source-export/save/reset requests.
+2. Separately enabled native input owns short renewable leases and enforces focus/F8/stop/disconnect release
+   with an independent timer and hard control budget. The first live test did not exercise this path.
+3. The registered retail engine uses upstream Runtime/Harness/Option/Step through a restricted Link, explicit
+   decision callback/single-option route or caller-owned client. No provider/account/data-sharing route is selected.
+4. A standalone stdlib replay adapter remains available. Unity 2022.3 editor API guards support separate owned
+   authoring projects; package import and engine execution are separate pending validations.
 
-## Architecture decision
+Camera/controller candidates are not verified player identity. uGUI active/alpha hierarchy is not proof of visual
+visibility or item semantics. Optional typed UI reads support test evidence, not UI actions or arbitrary methods.
 
-Upstream Autopilot `48966d174939487cc759fdf8560f2bed6e717676` is an editor-oriented playtesting service with a Unity 6 package, code-reading agents and optional hosted services. Schedule I is a shipped Unity 2022.3 player with no source project or editor package-loading seam. Changing `package.json` alone cannot port that system.
+## Actual session and rollback
 
-The fork therefore separates three boundaries:
+The guarded beta session loaded Autopilot Schedule I 0.2.0 and emitted protocol 1 with engine `schedule_i`,
+adapter `melonloader`, runtime `IL2CPP`, game 0.4.7f12, Unity 2022.3.62f2, loader 0.7.3.0 and the owned PID.
+No gameplay command, save fixture or recording occurred because game-window app approval timed out and the
+workstation disconnected. The session timer exited its owned game and restored original files.
 
-1. A local Windows input adapter owns bounded actions and input release. It must validate the foreground game's executable and reject focus loss rather than send gameplay input into other applications.
-2. An optional MelonLoader bridge observes the active scene and main camera pose, together with runtime/focus metadata. It does not infer a player body pose, add arbitrary game reflection commands, patch gameplay, launch an agent, or upload observations.
-3. The existing Unity package receives API guards for 2022.3 authoring. Editor tests and generated-code behavior require a later editor validation window.
+After reconnect the journal was `finished`, all restoration flags true, no cleanup errors and no unknown new
+mod/config/save files. Independent SHA-256 reads matched 5 mod DLLs, 3 UserData files and 9,964 save files.
+A read-only privileged process query at 11:37:54 UTC confirmed owned game/test driver absent. Backups and raw
+loader evidence remain private and local. No cleanup uncertainty remains for this session.
 
-The initial Schedule I path supports scripted replay and observations. It does not automatically connect the upstream websocket service, generate harnesses from proprietary game source, supply cloud inference, or establish full autonomous gameplay. Future service integration must preserve explicit user control over providers and data sharing.
+Both installs contain Pack Rat 3.1.1 according to retained logs, matching Core libraries and B toggle configuration.
+Presence is not compatibility proof. The reviewed acceptance harness requires a newly owned disposable save and
+observed panel identity; its open/close and cancel checks remain unrun on both runtimes.
 
-## Acceptance still required
-
-Offline tests should prove action validation, bounded holds, foreground checks, cancellation and release through simulated backends. Compiling against local references proves API binding only.
-
-After source review and in a coordinated idle window, test the bridge and adapter on a disposable single-player save. Verify loader startup, observations, game focus, movement/interaction bindings, cancellation, foreground loss, menu transitions and quitting while actions are held. Repeat separately for each supported Mono and IL2CPP game version. Do not run these checks on an existing multiplayer session or treat them as save-compatibility proof.
+Full acceptance still requires separate live Mono and IL2CPP input/observation/cancellation checks and truthful
+owned-window video. Do not describe this handshake as completed autonomous playtesting or claim hosted-provider
+integration from the explicit-client seam. See `validation.md` and the durable handoff.

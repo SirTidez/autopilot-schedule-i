@@ -482,7 +482,7 @@ def serve_local(host="127.0.0.1", port=8765, wait=None, role="cli", announce_as=
         link.close(why)
         state["sessions"].pop(link.session, None)  # (no longer resumable)
 
-    server = serve(handler, host, port, max_size=None)
+    server = serve(handler, host, port, max_size=65536 if role == "schedule-i" else None)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     if role == "service" and announce_as:  # (a brain that stays: the plugins may find it by brain_file())
         announce(f"ws://{host}:{server.socket.getsockname()[1]}/v1/bridge", brain_file(announce_as), extra)

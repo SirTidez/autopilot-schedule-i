@@ -1,27 +1,36 @@
 # Autopilot for Schedule I
 
-SirTidez's personal Schedule I-focused fork of [RamenVR Autopilot](https://github.com/ramenvr/autopilot), based on upstream commit `48966d174939487cc759fdf8560f2bed6e717676`.
+SirTidez's personal fork of [RamenVR Autopilot](https://github.com/ramenvr/autopilot), based on upstream `48966d174939487cc759fdf8560f2bed6e717676`. The Apache-2.0 license, notices and history are preserved. This independent project is unaffiliated with TVGS or RamenVR.
 
-This fork adapts Autopilot's playtesting tools to the shipped Windows game and its Unity 2022.3 modding environment. It preserves the upstream Apache-2.0 license and history. It is an independent personal project, unaffiliated with TVGS or RamenVR.
+## Implemented runtime path
 
-## Schedule I path
+- A MelonLoader runtime bridge with separate **IL2CPP and Mono** builds, typed scene/camera/controller-candidate observations, read-only uGUI observations and explicitly enabled keyboard/mouse input.
+- Integration with the original **Runtime/Harness/Option/Step** loop, using a caller-selected local decision callback, single-option harness or explicitly supplied SDK client. The retail profile rejects editor source export, account and automatic provider routes.
+- Request-boundary cancellation and an independent native input watchdog: renewable leases, F8/focus/disconnect release, permanent stop revocation and a 60-second control budget starting at the first action.
+- A reviewed Pack Rat acceptance harness and reversible test driver with hash-verified backups, owned-window-only video capture and explicit incomplete-restoration reporting.
+- A separate dependency-free replay adapter and Unity 2022.3 API compatibility changes for owned authoring projects.
 
-The shipped game cannot load an editor package. Use the dedicated [Schedule I adapter and setup guide](plugin/schedule-i/README.md) for the runtime path:
+See the [runtime setup guide](plugin/schedule-i/README.md). Start with the non-executing preflight:
 
-- A dependency-free Python entry point for bounded local input replay, with foreground-process checks, cancellation and input release.
-- An optional MelonLoader observation bridge built against your own local game references. Game assemblies and assets are never distributed here.
-- Unity 2022.3 API compatibility changes in the original editor package for separate authoring projects. An authoring project is not required for the runtime adapter.
+```powershell
+python -m autopilot.schedule_i_harness
+python -m unittest discover -s plugin/schedule-i/tests -p 'test_*.py' -v
+```
 
-The Schedule I entry point does not start Aura, sign in, install an agent, or call a model provider. Upstream model-driven exploration, harness generation and editor integrations remain separate capabilities; the Schedule I adapter is currently a local scripted testing foundation, not verified autonomous gameplay.
+Connection, native control, diagnostics and file observation are separate launch-time opt-ins. No model provider, credentials, persistent service or telemetry upload is enabled automatically. A reviewed local decision callback exercises the actual upstream loop; it does not establish hosted-model autonomy or prompt-to-harness generation.
 
-## Compatibility and verification
+## Verification and limits
 
-The initial target is Schedule I `0.4.7f12`, Unity `2022.3.62f2`, Windows x64, IL2CPP, with MelonLoader `0.8.0-ci.2575`. A separate Mono reference tree is available for build checks. See [runtime evidence](docs/runtime-evidence.md) for the distinction between observed versions, offline validation and pending game tests.
+**Experimental; full gameplay acceptance is incomplete.** Both selected reference targets are Schedule I `0.4.7f12`, Unity `2022.3.62f2`, MelonLoader `0.7.3`: beta IL2CPP and alternate-beta Mono. Both final runtime builds passed with zero warnings/errors; **51 Python tests and 12 C# safety groups passed**.
 
-**Status: experimental.** The [validation record](docs/validation.md) covers 14 passing offline tests, both observer builds and a Unity 2022.3 source API check. These checks do not establish in-game compatibility. No mod was installed into the live game and no gameplay automation was run during the initial port. Follow the adapter guide's manual acceptance checklist in a disposable solo save before relying on it.
+One guarded IL2CPP session loaded the bridge and completed a version/PID-verified handshake. The session timed out after workstation UI access became unavailable; no gameplay commands or video recording ran. Cleanup exited the owned game and restored original mod DLLs, configuration and 9,964 save files, with independent hash verification. **Live Mono loading, Pack Rat interaction, real input/cancellation and video remain unverified.**
+
+Pose observations identify a camera and an explicitly uncertain controller candidate. Verified player authority, navigation, inventory/quest semantics, arbitrary reflection, source export, save/reset commands and multiplayer control are unsupported. Reviewed Python callbacks remain cooperative code, not a hard process sandbox. Unity package import and IL postprocessing remain untested.
+
+See the [validation record](docs/validation.md), [runtime evidence](docs/runtime-evidence.md) and [durable handoff](docs/HANDOFF-2026-10-31.md). Game assemblies, assets, saves, private logs and raw backups/video are not distributed.
 
 ## Upstream capabilities
 
-The [preserved upstream README](README.upstream.md) describes the original Unreal, Unity and Godot system, including its optional hosted services and account flows. Those instructions are not the Schedule I setup path. The original [contributor guide](CONTRIBUTING.md) and [license](LICENSE) remain available.
+The [preserved upstream README](README.upstream.md) describes the original Unreal, Unity and Godot system and its optional hosted/account flows. Use the dedicated retail Schedule I path above for this fork. The original [contributor guide](CONTRIBUTING.md) and [license](LICENSE) remain available.
 
-Development is on the `schedule-i` branch. Push changes only to your own fork; keep the `ramenvr/autopilot` remote for fetching upstream updates.
+Development and the default branch are `schedule-i`. Publish to your personal fork; retain the upstream remote for fetching updates.
