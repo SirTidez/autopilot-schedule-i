@@ -64,10 +64,21 @@ ENGINE_OPS = {
     "movement": {},
 }
 
+# Schedule I is a compiled player with an explicit MelonLoader capability profile.
+# Never pretend it provides arbitrary reflection, UI actions, source export or scene restarts.
+SCHEDULE_I_OPS = {
+    "context": {}, "session": {"action": "status"}, "ping": {},
+    "key": {"key": "", "mode": "press"}, "pose": {},
+    "find": {"limit": 1}, "transforms": {"objects": []},
+    "view": {"max_count": 1}, "movement": {},
+}
+
 
 def required_ops(hello):
     """The ops a plugin must have, by the engine its hello says (none said: Unreal)."""
     engine = str((hello or {}).get("engine") or "unreal").lower()
+    if engine == "schedule_i":
+        return SCHEDULE_I_OPS
     return REQUIRED_OPS if engine == "unreal" else {**REQUIRED_OPS, **ENGINE_OPS}
 
 

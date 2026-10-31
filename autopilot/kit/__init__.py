@@ -1,6 +1,13 @@
 """The toolkit harness code is written with: `from autopilot.kit import *`."""
 
-from typesafe_sdk import Choice, Noul, Score  # noqa: F401 - for harnesses' extra questions
+# Schedule I fork: the harness contract and local controllers must be usable without
+# importing a hosted decision SDK. Resolve these public exports only when requested.
+def __getattr__(name):
+    if name in ("Choice", "Noul", "Score"):
+        import typesafe_sdk
+
+        return getattr(typesafe_sdk, name)
+    raise AttributeError(name)
 
 from . import control  # noqa: F401
 from .control import (  # noqa: F401
@@ -36,3 +43,6 @@ def where(pose, point):
     b = bearing(pose["at"], pose["yaw"], point)
     return {"distance": round(point.dist2d(pose["at"])), "direction": clock(b), "bearing": round(b),
             "height": round(point.z - pose["at"].z)}
+
+
+__all__ = [name for name in globals() if not name.startswith("_")] + ["Choice", "Noul", "Score"]

@@ -5,10 +5,11 @@ import os
 
 from .base import Engine, OpEngine  # noqa: F401
 from .godot import Godot
+from .schedule_i import ScheduleI
 from .unity import Unity
 from .unreal import Unreal
 
-ENGINES = {e.name: e for e in (Unreal(), Unity(), Godot())}
+ENGINES = {e.name: e for e in (Unreal(), Unity(), Godot(), ScheduleI())}
 DEFAULT = "unreal"
 
 

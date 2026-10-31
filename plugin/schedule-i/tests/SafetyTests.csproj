@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <UseAppHost>false</UseAppHost>
+    <OutputType>Exe</OutputType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NuGetAudit>false</NuGetAudit>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SafetyTests.cs" />
+    <Compile Include="../RuntimeInput.cs" />
+    <Compile Include="../BridgeEndpoint.cs" />
+    <Compile Include="../../unity/com.ramenvr.autopilot/Runtime/Json.cs" />
+  </ItemGroup>
+</Project>

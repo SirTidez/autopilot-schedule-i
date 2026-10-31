@@ -8,7 +8,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from autopilot.schedule_i import AdapterError, RuntimeAdapter, ScheduleIGame, main, validate_frames
+from autopilot.schedule_i import (
+    MAX_MOUSE_TOTAL,
+    AdapterError,
+    RuntimeAdapter,
+    ScheduleIGame,
+    main,
+    validate_frames,
+)
 
 
 class Fake:
@@ -20,6 +27,8 @@ class Fake:
         self.on_sleep = lambda: None
         self.fail_down = False
         self.fail_up = set()
+        self.mouse_events = []
+        self.fail_mouse = False
 
     def focused(self):
         return self.focus
@@ -31,6 +40,11 @@ class Fake:
         self.events.append((key, down))
         if (down and self.fail_down) or (not down and key in self.fail_up):
             raise AdapterError("injected SendInput failure")
+
+    def move_mouse(self, dx, dy):
+        self.mouse_events.append((dx, dy))
+        if self.fail_mouse:
+            raise AdapterError("injected relative mouse failure")
 
     def clock(self):
         return self.now
@@ -197,6 +211,74 @@ class RuntimeTests(unittest.TestCase):
                 threading.Event().wait(0.01)
             self.assertIn(("W", False), b.events)
             self.assertIsInstance(a.fault, AdapterError)
+
+    def test_mouse_fkey_counts_and_upstream_positive_up_sign(self):
+        b = Fake()
+        with b.adapter() as a:
+            a.request("key", {"key": "MouseX", "mode": "press", "value": 12.5})
+            a.request("key", {"key": "MouseY", "mode": "press", "value": -7.5})
+            a.request("key", {"key": "MouseY", "mode": "press", "value": 2})
+        self.assertEqual(b.mouse_events, [(13, 0), (0, 8), (0, -2)])
+        self.assertEqual(b.events, [])
+        self.assertEqual(b.now, 0)  # axis press moves once, not a timed held button
+
+    def test_mouse_convenience_validates_both_axes_before_moving(self):
+        b = Fake()
+        with ScheduleIGame(b, clock=b.clock, sleep=b.sleep) as game:
+            game.mouse(right=10, up=20)
+            game.press("MouseX", value=-0.5)
+            game.mouse(right=0.1, up=0)
+        self.assertEqual(b.mouse_events, [(10, 0), (0, -20), (-1, 0)])
+        b = Fake()
+        with self.assertRaises(ValueError):
+            with ScheduleIGame(b, clock=b.clock, sleep=b.sleep) as game:
+                game.hold("W", seconds=1)
+                game.mouse(right=10, up=float("nan"))
+        self.assertEqual(b.mouse_events, [])
+        self.assertEqual(b.events[-1], ("W", False))
+
+    def test_mouse_numeric_bounds_and_unsupported_modes(self):
+        values = (float("nan"), float("inf"), -201, 200.1, True, "10", None, [])
+        invalid = [{"key": "MouseX", "value": value} for value in values]
+        invalid += [{"key": "MouseY", "value": 1, "mode": mode}
+                    for mode in ("hold", "release", "toggle")]
+        invalid += [{"key": "MouseY", "value": 1, "rate": True},
+                    {"key": "MouseY", "value": 1, "seconds": 0.1}]
+        for args in invalid:
+            b = Fake()
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                b.adapter().request("key", args)
+            self.assertFalse(b.mouse_events)
+
+    def test_mouse_session_and_replay_count_budgets(self):
+        frame = {"type": "request", "op": "key", "args": {"key": "MouseX", "value": 200}}
+        with self.assertRaisesRegex(ValueError, "relative mouse counts"):
+            validate_frames([frame] * (MAX_MOUSE_TOTAL // 200 + 1))
+        b = Fake()
+        with b.adapter() as a:
+            for _ in range(MAX_MOUSE_TOTAL // 200):
+                a.request("key", frame["args"])
+            with self.assertRaisesRegex(AdapterError, "budget exhausted"):
+                a.request("key", {"key": "MouseY", "value": 1})
+        self.assertEqual(sum(abs(x) + abs(y) for x, y in b.mouse_events), MAX_MOUSE_TOTAL)
+
+    def test_mouse_focus_stop_cancel_and_backend_failure_release_owned_buttons(self):
+        for failure in ("focus", "stop", "cancel", "backend"):
+            b, cancel = Fake(), threading.Event()
+            with self.subTest(failure=failure), self.assertRaises(AdapterError):
+                with b.adapter(cancel=cancel) as a:
+                    a.request("key", {"key": "LeftMouseButton", "mode": "hold", "seconds": 1})
+                    if failure == "focus":
+                        b.focus = False
+                    elif failure == "stop":
+                        b.stop = True
+                    elif failure == "cancel":
+                        cancel.set()
+                    else:
+                        b.fail_mouse = True
+                    a.request("key", {"key": "MouseX", "value": 10})
+            self.assertEqual(b.events[-1], ("LeftMouseButton", False))
+            self.assertEqual(len(b.mouse_events), 1 if failure == "backend" else 0)
 
 
 if __name__ == "__main__":

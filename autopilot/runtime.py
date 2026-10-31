@@ -14,8 +14,6 @@ import traceback
 import weakref
 from collections import Counter, defaultdict, deque
 
-from typesafe_sdk import Choice, RetryPolicy
-
 from .kit.geom import Vec, wrap
 from .kit.harness import Harness, Option, Status, Step
 
@@ -72,7 +70,7 @@ def jev_client(warm=True):
     doesn't pass Content-Encoding on to TypeSafe."""
     import httpx2
     from dotenv import load_dotenv
-    from typesafe_sdk import TypeSafeClient
+    from typesafe_sdk import RetryPolicy, TypeSafeClient
 
     load_dotenv()
     used = [time.monotonic()]
@@ -92,6 +90,8 @@ def jev_model():
 
 def _keep_warm(ref, http, used):
     """Keeps Jev's connection open and its server awake until the client is closed or dropped."""
+    from typesafe_sdk import RetryPolicy
+
     first = True
     while not http.is_closed:
         if first or time.monotonic() - used[0] >= WARM_EVERY:
@@ -158,9 +158,16 @@ class Running:
 STILL_GAP = 2.0  # seconds between two stills of findings, at least
 
 
+def decision_choice(**kwargs):
+    """Load the original hosted SDK only for a run that actually chooses that route."""
+    from typesafe_sdk import Choice
+
+    return Choice(**kwargs)
+
+
 class Runtime:
     def __init__(self, game, harness, trace_path, client=None, max_seconds=120.0, say=None, stop=None, resume=None,
-                 telemetry=None, progress=None):
+                 telemetry=None, progress=None, choice_factory=None):
         self.game, self.h = game, harness
         self.trace = Trace(trace_path)
         # The run's telemetry folder when its data is shared (autopilot/telemetry.py): each decision is kept whole
@@ -178,6 +185,9 @@ class Runtime:
         self.log_before = game.log  # given back when the episode ends (probes after it log there)
         self.game.log = self.trace
         self.client = client
+        # Schedule I fork: explicit local decision clients share the real runtime loop;
+        # no SDK import, key discovery or network fallback is needed for those clients.
+        self.choice_factory = choice_factory or decision_choice
         self.max_seconds = max_seconds
         self.say = say or (lambda text: None)  # progress in words (the Autopilot tab's status line)
         self.stop = stop or (lambda: False)  # an outside request to stop
@@ -232,7 +242,7 @@ class Runtime:
         }
         if self.plan:
             state["plan"] = self.plan_facts()
-        questions = {"pick": Choice(instructions=h.instructions or DEFAULT_INSTRUCTIONS,
+        questions = {"pick": self.choice_factory(instructions=h.instructions or DEFAULT_INSTRUCTIONS,
                                     criteria={o.name: o.description for o in opts})}
         try:
             questions.update(h.questions(obs) or {})
@@ -371,7 +381,12 @@ class Runtime:
             r.gen.close()
         except Exception as e:
             self.error(f"option {r.option.name} close", e)
-        self.game.release_all()
+        try:
+            self.game.release_all()
+        except Exception as e:
+            # A disconnected compiled player must still finish its trace and teardown.
+            # The MelonLoader side separately expires/revokes all owned input leases.
+            self.error("release inputs", e)
         self.running = None
         self.stats[r.option.name]["interrupted"] += 1
         self.stall_tried[r.option.name]["interrupted"] += 1

@@ -1,12 +1,60 @@
 # Schedule I personal runtime port
 
-This is the local, scripted foundation of the personal Autopilot fork. It supports a retail Windows
-Schedule I process through a small external adapter, plus an optional read-only MelonLoader observer.
-It does **not** implement autonomous model-driven gameplay, the full upstream bridge, or game-source export.
-Neither component launches the game, signs into a service, downloads dependencies at runtime, or sends data out.
+This personal Autopilot port provides a MelonLoader runtime bridge for retail Windows Schedule I,
+plus a separate bounded external replay adapter and optional local observation files. The runtime bridge
+speaks a documented subset of upstream protocol 1 and supplies typed Unity reads and guarded OS input.
+It does **not** implement the full editor bridge or game-source export. Neither component launches the game,
+signs into a service, starts a model/service, or downloads dependencies at runtime. The bridge connects only
+to an explicitly enabled local WebSocket service; the replay adapter needs no service.
 
 The current reference target is Unity 2022.3, x64 IL2CPP, MelonLoader 0.8. Mono has a separate build target;
 compilation alone does not establish compatibility with a current Mono release. No mod is automatically installed.
+
+## MelonLoader runtime bridge
+
+Build the matching runtime DLL using the instructions below. Installation and game launch remain deliberate
+manual steps; there are no install hooks. The following are separate launch-time opt-ins:
+
+| Flag | Meaning |
+| --- | --- |
+| `-AutopilotScheduleIConnect` | Connect out to an already running local bridge service |
+| `-AutopilotScheduleIControl` | Also permit bounded input; ineffective without Connect |
+| `-AutopilotScheduleIUrl=ws://127.0.0.1:8765/v1/bridge` | Optional service endpoint; only literal loopback IPs and this path are accepted |
+| `-AutopilotScheduleIObserve` | Independently enable local camera snapshot files |
+
+All are off by default. There is no auto-reconnect or service startup. Connections use `engine=schedule_i`,
+`host=game`, `adapter=melonloader`, `source_export=false`, `share=false`, and feature names `timed_hold` and
+`schedule_i_runtime`. The Python Schedule I engine provides the corresponding restricted upstream harness seam.
+
+The C# bridge supports `context`, `ping`, `session` status/stop, `key`, `pose`, `movement`, `find`, `transforms`,
+and `view`. Socket work uses background queues; Unity reads and request dispatch run in `OnUpdate`. Incoming
+and outgoing queues are limited to 256 items, messages to 64 KiB, JSON nesting to 32, and dispatch to 32
+requests per frame. Scene hierarchy scans examine at most 2048 objects from up to eight loaded scenes;
+find/transform results cap at 128, view results at 64. Results explicitly disclose possible truncation.
+Filters accept only typed GameObject/Camera/CharacterController/Renderer classes, not game class reflection.
+
+`pose.eye/yaw/pitch` describe the tagged main camera. A CharacterController **ancestor of that camera** may
+add candidate `at`, `velocity`, and `on_ground`, labelled `camera_ancestor_character_controller_candidate` with
+`player_identity_verified=false`. No global controller guess is made. Context reports an empty character
+when there is no candidate. Movement exposes candidate dimensions/step/slope only; unknown walk/jump/gravity
+parameters are null. View projects renderer centers; it explicitly does **not** test occlusion or the crosshair.
+An object can therefore appear through a wall. Runtime IDs identify results; display names are separate.
+
+Input is bound to this game process's foreground PID. F8, focus loss, errors, stop, disconnect and unload
+release owned input. Scene changes clear leases. Default holds expire after 0.6s unless renewed by the upstream
+runtime; explicit timed holds last at most five seconds. An independent 20ms timer releases leases even if
+Unity frames stall. A fresh connection has a hard 60s control budget that renewals cannot reset. Stop/F8/focus
+loss latch control off for that connection. The budget starts at the first valid action; capability probes,
+releases and observation reads never arm control. Context distinguishes `control_enabled` from `control_active`.
+A reconnect is never initiated automatically. Release failures are
+recorded in the stop reason while all remaining keys are still attempted. As with any OS input mechanism,
+forced process termination or an OS denial can prevent cleanup.
+
+There is no `rc`, arbitrary method call, UI click/tree, source/codex export, screenshot, pause, scene loading,
+restart, teleport, save manipulation or game SDK access. Unsupported requests return an explicit `unknown op`
+error and release input. An empty-key capability probe emits no input and does not stop existing leases.
+No Harmony patches or virtual Input System devices are installed. The bridge does not infer multiplayer
+ownership or safety; a live test must establish which camera/controller represents the local player.
 
 ## Preview and offline validation
 
@@ -15,12 +63,15 @@ From the repository root, Python 3.12+ with no extra packages:
 ```powershell
 python -m autopilot.schedule_i plugin/schedule-i/examples/observe.json
 python -m unittest discover -s plugin/schedule-i/tests -p 'test_*.py' -v
+dotnet run --project plugin/schedule-i/tests/SafetyTests.csproj -m:1
 ```
 
 Preview validates the entire JSON file and reports the frame count. It does not create Windows process handles,
 emit input, read the game, or contact a service. The example contains only context/ping requests.
 On managed Windows environments where the sandbox redirects the default temporary directory outside permitted
 locations, set `TMP` and `TEMP` to an explicitly writable directory before running tests.
+The C# console suite requires .NET 9 and tests fake input/endpoint policy only; it never instantiates the
+Win32 sink, loads Unity/MelonLoader or connects to a service.
 
 ## Runtime input, when deliberately enabled
 
@@ -48,7 +99,7 @@ All frames are validated before any live backend is created. Invalid commands st
 
 ## Upstream compatibility boundary
 
-The external adapter reuses upstream protocol-1 request/response **envelopes** and digital FKey names:
+The external adapter reuses upstream protocol-1 request/response **envelopes** and FKey names:
 
 ```json
 [
@@ -60,7 +111,7 @@ The external adapter reuses upstream protocol-1 request/response **envelopes** a
 
 | Operation | Supported meaning |
 | --- | --- |
-| `key` | Digital `press`, duration-bounded `hold`, `release`, `release_all` |
+| `key` | Digital `press`, duration-bounded `hold`, `release`, `release_all`; one-shot MouseX/MouseY relative counts |
 | `context` | Capabilities, PID, game identity, local replay mode |
 | `ping` | Successful local adapter heartbeat |
 | `session` | `status` or stop/release the adapter; never quit/restart the game |
@@ -68,11 +119,18 @@ The external adapter reuses upstream protocol-1 request/response **envelopes** a
 | `wait` | Local extension for replay timing; not an upstream wire operation |
 
 Keys: A–Z, Zero–Nine, SpaceBar, Enter, Tab, Escape, LeftShift, LeftControl, and left/right/middle mouse buttons.
-There is no camera mouse-motion, pointer, gamepad, analog axis, input-action, UI-tree, inventory, pathfinding, quest,
+MouseX positive moves right; MouseY positive moves up. Mouse axes support `mode=press` only, with finite signed
+`value` up to 200 counts per request and 4000 total absolute counts per session/replay. Values are quantized
+to integer OS counts (half counts away from zero). Axis presses have no hold/release/seconds/rate semantics.
+The OS and game sensitivity settings apply; these are **not** calibrated degrees and OS acceleration can differ
+from Unity virtual-device deltas. `ScheduleIGame.mouse(right=..., up=...)` validates both axes before sending
+either, and `press("MouseX", value=...)` also works. No angular `turn()` or calibration is fabricated.
+
+There is no absolute pointer, gamepad, other analog axis, input-action, UI-tree, inventory, pathfinding, quest,
 save/reset, multiplayer or arbitrary method/reflection support. Unsupported operations fail rather than return
-fabricated success. The adapter is not registered in `autopilot.engines`: it cannot satisfy upstream
-`bridge.REQUIRED_OPS` (`rc`, `ui`, `watch`, etc.) or safely export a retail game's source. `autopilot serve/play`
-continue to be the upstream editor-agent paths and are not required for this port.
+fabricated success. The **external replay adapter** is not the registered MelonLoader engine: it cannot satisfy upstream
+editor `bridge.REQUIRED_OPS` (`rc`, `ui`, `watch`, etc.) or safely export a retail game's source.
+The registered `schedule_i` runtime profile instead advertises its actual restricted operation subset.
 
 For local Python harnesses, `ScheduleIGame` preserves the useful subset of the upstream kit's names:
 
@@ -97,10 +155,10 @@ validated game observations and policies first, and explicitly choose any model/
 
 ## Optional observer build and install
 
-`Autopilot.ScheduleI.csproj` is a **MelonLoader mod**, not a Unity editor package and not a support library.
-`ObserverMod.cs` owns startup, sampling and shutdown. It uses the stable Unity camera/scene seam, requiring
-neither S1API nor game-assembly reflection. This seam is sufficient for scene/camera evidence only; it does not
-identify a local player, infer multiplayer authority, or access gameplay systems. No Harmony/input patches are used.
+`Autopilot.ScheduleI.csproj` is a **MelonLoader mod**, not a Unity editor package or support library.
+`ObserverMod.cs` owns lifecycle and optional file sampling; `RuntimeBridge.cs` owns the connection/dispatch,
+`RuntimeRead.cs` typed reads, and `RuntimeInput.cs` input/lease policy. These require neither S1API nor game-assembly
+reflection. Candidate observations do not prove player identity or multiplayer authority. No Harmony patches are used.
 
 Supply local references from the matching game/runtime. Assemblies are referenced with `Private=false` and must
 never be copied into the repository or distributed. No game-specific path is hard-coded into the build:

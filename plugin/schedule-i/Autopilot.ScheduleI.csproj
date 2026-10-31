@@ -12,8 +12,14 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ObserverMod.cs" />
+    <Compile Include="RuntimeBridge.cs" />
+    <Compile Include="RuntimeRead.cs" />
+    <Compile Include="RuntimeInput.cs" />
+    <Compile Include="BridgeEndpoint.cs" />
+    <Compile Include="../unity/com.ramenvr.autopilot/Runtime/Json.cs" Link="Upstream/Json.cs" />
     <Reference Include="MelonLoader"><HintPath>$(LoaderDir)/MelonLoader.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(UnityRefs)/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(UnityRefs)/UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup Condition="'$(RuntimeFlavor)' != 'Mono'">
     <Reference Include="Il2CppInterop.Runtime"><HintPath>$(LoaderDir)/Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>

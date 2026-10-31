@@ -18,12 +18,26 @@ namespace Autopilot.ScheduleI
         bool enabled;
         double next;
         string snapshot;
+        RuntimeBridge bridge;
         readonly int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
 
         public override void OnInitializeMelon()
         {
-            // Deliberate launch-time opt-in: never connects to a service, opens a port or installs anything.
-            enabled = Environment.GetCommandLineArgs().Contains("-AutopilotScheduleIObserve");
+            // Separate explicit opt-ins. Never starts a service or model, installs anything or opens a listener.
+            var args = Environment.GetCommandLineArgs();
+            if (args.Contains("-AutopilotScheduleIConnect"))
+            {
+                var url = "ws://127.0.0.1:8765/v1/bridge";
+                foreach (var arg in args)
+                    if (arg.StartsWith("-AutopilotScheduleIUrl=", StringComparison.Ordinal)) url = arg.Substring("-AutopilotScheduleIUrl=".Length);
+                try
+                {
+                    bridge = new RuntimeBridge(url, args.Contains("-AutopilotScheduleIControl"));
+                    LoggerInstance.Msg("Explicit local bridge enabled. Control requires its separate launch flag; no service is started.");
+                }
+                catch (Exception e) { LoggerInstance.Warning("Bridge disabled: " + e.Message); }
+            }
+            enabled = args.Contains("-AutopilotScheduleIObserve");
             if (!enabled) return;
             var folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UserData", "AutopilotScheduleI");
             Directory.CreateDirectory(folder);
@@ -55,6 +69,17 @@ namespace Autopilot.ScheduleI
 
         public override void OnUpdate()
         {
+            if (bridge != null && !bridge.Connected && bridge.Problem.Length > 0)
+            {
+                LoggerInstance.Warning("Local bridge ended: " + bridge.Problem);
+                bridge.Dispose(); bridge = null;
+            }
+            try { bridge?.Tick(); }
+            catch (Exception e)
+            {
+                bridge?.Dispose(); bridge = null;
+                LoggerInstance.Warning("Bridge disabled: " + e.Message);
+            }
             if (!enabled || Time.realtimeSinceStartupAsDouble < next) return;
             next = Time.realtimeSinceStartupAsDouble + 0.25; // bounded, four small snapshots per second
             try
@@ -97,6 +122,10 @@ namespace Autopilot.ScheduleI
             catch (IOException) { } // stale files are rejected by PID and timestamp by the external adapter
         }
 
-        public override void OnDeinitializeMelon() => RemoveSnapshot();
+        public override void OnDeinitializeMelon()
+        {
+            bridge?.Dispose(); bridge = null;
+            RemoveSnapshot();
+        }
     }
 }

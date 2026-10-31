@@ -16,6 +16,9 @@ from pathlib import Path
 MAX_SECONDS = 60.0
 MAX_HOLD = 5.0
 MAX_FRAMES = 500
+MAX_MOUSE_DELTA = 200
+MAX_MOUSE_TOTAL = 4000
+MOUSE_AXES = ("MouseX", "MouseY")
 KEYS = {chr(c): c for c in range(ord("A"), ord("Z") + 1)}
 KEYS.update({name: 0x30 + i for i, name in enumerate(
     ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"))})
@@ -36,11 +39,20 @@ def seconds(value, maximum, *, positive=False):
     return float(value)
 
 
+def mouse_counts(value):
+    """One relative axis delta, nearest integer count (half counts round away from zero)."""
+    if (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+            or abs(value) > MAX_MOUSE_DELTA):
+        raise ValueError(f"mouse value must be finite numeric counts within +/-{MAX_MOUSE_DELTA}")
+    return int(math.copysign(math.floor(abs(value) + 0.5), value))
+
+
 def validate_frames(frames):
     """Validate the ENTIRE replay before acquiring a process or emitting any input."""
     if not isinstance(frames, list) or not 1 <= len(frames) <= MAX_FRAMES:
         raise ValueError(f"replay must contain 1..{MAX_FRAMES} request frames")
     total = 0.0
+    mouse_total = 0
     for frame in frames:
         if not isinstance(frame, dict) or frame.get("type") != "request":
             raise ValueError("expected upstream protocol-1 request envelope")
@@ -54,6 +66,11 @@ def validate_frames(frames):
             mode = args.get("mode", "press")
             if mode not in ("press", "hold", "release", "release_all"):
                 raise ValueError("unsupported key mode")
+            if isinstance(args.get("key"), str) and args["key"] in MOUSE_AXES and mode != "release_all":
+                if mode != "press" or args.get("rate", False) or "seconds" in args:
+                    raise ValueError("mouse axes support one-shot press counts only; no hold/rate/seconds")
+                mouse_total += abs(mouse_counts(args.get("value", 1)))
+                continue
             if mode != "release_all" and (not isinstance(args.get("key"), str) or args["key"] not in KEYS | MOUSE):
                 raise ValueError("unsupported FKey")
             if mode in ("press", "hold"):
@@ -68,6 +85,8 @@ def validate_frames(frames):
             raise ValueError("runtime sessions only support status/stop; never launch or restart the game")
     if total > MAX_SECONDS:
         raise ValueError(f"replay exceeds {MAX_SECONDS} seconds")
+    if mouse_total > MAX_MOUSE_TOTAL:
+        raise ValueError(f"replay exceeds {MAX_MOUSE_TOTAL} relative mouse counts")
     return frames
 
 
@@ -84,6 +103,7 @@ class RuntimeAdapter:
         self.snapshot = Path(snapshot) if snapshot else None
         self.clock, self.sleep = clock, sleep
         self.held = {}
+        self.mouse_total = 0
         self.started = clock()
         self.closed = False
         self._lock = threading.RLock()
@@ -148,7 +168,16 @@ class RuntimeAdapter:
         with self._lock:
             self.tick()
             key, mode = args.get("key"), args.get("mode", "press")
-            if mode == "release_all":
+            if key in MOUSE_AXES and mode == "press":
+                count = mouse_counts(args.get("value", 1))
+                if self.mouse_total + abs(count) > MAX_MOUSE_TOTAL:
+                    raise AdapterError("Session relative mouse count budget exhausted")
+                # Charge before dispatch: partial backend failures must not renew the budget.
+                self.mouse_total += abs(count)
+                if count:
+                    self.backend.move_mouse(count if key == "MouseX" else 0,
+                                            -count if key == "MouseY" else 0)
+            elif mode == "release_all":
                 for held in list(self.held):
                     self.backend.emit(held, False)
                     del self.held[held]
@@ -161,7 +190,7 @@ class RuntimeAdapter:
                 # Record ownership BEFORE emitting: a partial failure must still be released.
                 self.held[key] = self.clock() + duration
                 self.backend.emit(key, True)
-        if mode == "press":
+        if mode == "press" and key not in MOUSE_AXES:
             self.wait(duration)
 
     def wait(self, duration):
@@ -208,6 +237,8 @@ class RuntimeAdapter:
                 return {"engine": "unity", "game": "Schedule I", "host": "external",
                         "protocol": 1, "mode": "local-scripted-replay", "source_export": False,
                         "ops": ["key", "pose", "context", "session", "ping", "wait"],
+                        "mouse": {"mode": "relative_counts", "axes": list(MOUSE_AXES),
+                                  "max_delta": MAX_MOUSE_DELTA, "session_budget": MAX_MOUSE_TOTAL},
                         "pose_source": "camera only; not player pose", "pid": self.backend.pid}
             return {}
         except BaseException:
@@ -312,6 +343,20 @@ class WindowsInput:
         if self.user.SendInput(1, ctypes.byref(item), ctypes.sizeof(item)) != 1:
             raise AdapterError("SendInput failed (Windows may block input across privilege levels)")
 
+    def move_mouse(self, dx, dy):
+        """A bounded Windows-relative mouse event; dy is down, unlike upstream MouseY."""
+        if (type(dx) is not int or type(dy) is not int
+                or max(abs(dx), abs(dy)) > MAX_MOUSE_DELTA):
+            raise ValueError("mouse backend requires bounded integer counts")
+        if not self.focused() or self.emergency_stop():
+            raise AdapterError("Target is not focused, or F8 held")
+        item = self.Input()
+        item.kind = 0
+        item.payload.mouse.dx, item.payload.mouse.dy = dx, dy
+        item.payload.mouse.flags = 0x0001  # MOUSEEVENTF_MOVE, relative (never ABSOLUTE)
+        if self.user.SendInput(1, ctypes.byref(item), ctypes.sizeof(item)) != 1:
+            raise AdapterError("Relative mouse SendInput failed")
+
 
 class ScheduleIGame(RuntimeAdapter):
     """Small kit-style harness surface backed by the same bounded adapter.
@@ -321,8 +366,29 @@ class ScheduleIGame(RuntimeAdapter):
     A harness receives this object directly; no downloaded/generated code is executed.
     """
 
-    def press(self, key, seconds=0.1):
-        return self.request("key", {"key": key, "mode": "press", "seconds": seconds})
+    def press(self, key, seconds=None, *, value=None):
+        args = {"key": key, "mode": "press"}
+        if seconds is not None or key not in MOUSE_AXES:
+            args["seconds"] = 0.1 if seconds is None else seconds
+        if value is not None:
+            args["value"] = value
+        return self.request("key", args)
+
+    def mouse(self, right=0.0, up=0.0):
+        """Upstream-style one-shot relative counts; sensitivity applies, not calibrated degrees."""
+        try:
+            # Validate both axes and their combined remaining budget before emitting either.
+            dx, up_count = mouse_counts(right), mouse_counts(up)
+            with self._lock:
+                self.tick()
+                if self.mouse_total + abs(dx) + abs(up_count) > MAX_MOUSE_TOTAL:
+                    raise AdapterError("Session relative mouse count budget exhausted")
+                for axis, count in (("MouseX", dx), ("MouseY", up_count)):
+                    if count:
+                        self.request("key", {"key": axis, "mode": "press", "value": count})
+        except BaseException:
+            self.close()
+            raise
 
     def hold(self, key, seconds):
         return self.request("key", {"key": key, "mode": "hold", "seconds": seconds})

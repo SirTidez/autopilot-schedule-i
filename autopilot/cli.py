@@ -269,6 +269,9 @@ def prepare(link, path=None, level=None):
     """The game, started if needed in the level the run plays (choose_level), and its codex (built on first use; the
     level snapshot refreshed every time). path: the project on this machine when given by hand (--project);
     otherwise it is remembered or asked of the game. level: the level the run asks for (its start frame's), if any."""
+    if (link.hello or {}).get("engine") == "schedule_i":
+        raise RuntimeError("Use autopilot.schedule_i_harness for the retail MelonLoader bridge; "
+                           "the editor agent's source export, restart and hosted-model route are not enabled")
     project = codexmod.project_of(link.hello)  # (its memory folder's name)
     game = Game(link, codexmod.Codex.for_project(project))
     name = (link.hello or {}).get("project") or "game"
@@ -856,6 +859,9 @@ def finish_after_run(say=print):
 
 
 def cmd_run(link, args):
+    if (link.hello or {}).get("engine") == "schedule_i":
+        raise RuntimeError("Use autopilot.schedule_i_harness with an explicitly supplied decision client; "
+                           "the retail game must not start the editor replay's hosted-model/session flow")
     project = codexmod.project_of(link.hello)
     game = Game(link, codexmod.Codex.for_project(project))
     root = codexmod.project_dir(project)

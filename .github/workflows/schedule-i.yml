@@ -5,6 +5,11 @@ on:
     branches: [schedule-i]
     paths:
       - "autopilot/schedule_i.py"
+      - "autopilot/schedule_i_harness.py"
+      - "autopilot/runtime.py"
+      - "autopilot/kit/**"
+      - "autopilot/bridge.py"
+      - "autopilot/engines/**"
       - "plugin/schedule-i/**"
       - ".github/workflows/schedule-i.yml"
   pull_request:
@@ -22,10 +27,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Offline safety and protocol tests (standard library only)
+      - name: Install only upstream local transport dependencies
+        run: python -m pip install requests==2.34.2 websockets==17.1
+      - name: Offline safety and real harness protocol tests (no model SDK or game)
         run: python -m unittest discover -s plugin/schedule-i/tests -v
       - name: Validate replay without opening or controlling the game
         run: python -m autopilot.schedule_i plugin/schedule-i/examples/observe.json
+      - name: Harness preflight without a game or provider
+        run: python -m autopilot.schedule_i_harness
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Native bridge policy tests (fake sink, no Win32 input)
+        run: dotnet run --project plugin/schedule-i/tests/SafetyTests.csproj -c Release -p:UseSharedCompilation=false
 
 # Proprietary game and loader references are intentionally absent from CI.
-# Build the optional observer locally against explicitly supplied references.
+# Build both MelonLoader targets locally against explicitly supplied references.
