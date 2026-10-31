@@ -1,4 +1,5 @@
 // The brain's requests (docs/protocol.md), handled on the main thread.
+// Modified for the personal Schedule I fork: Unity 2022.3 physics compatibility.
 
 using System;
 using System.Collections.Generic;
@@ -395,7 +396,7 @@ namespace Autopilot.Playtest
                 var cc = go.GetComponent<CharacterController>();
                 var rb = go.GetComponent<Rigidbody>();
                 if (cc != null && cc.enabled) velocity = cc.velocity;
-                else if (rb != null) velocity = rb.linearVelocity;
+                else if (rb != null) velocity = Loaded.Velocity(rb);
 #endif
                 var box = BoundsOf(go);
                 result[path] = new Dictionary<string, object>

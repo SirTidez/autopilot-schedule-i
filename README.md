@@ -1,89 +1,27 @@
-# Aura Autopilot
+# Autopilot for Schedule I
 
-> By the developers of Aura, [www.tryaura.dev](https://www.tryaura.dev/)
+SirTidez's personal Schedule I-focused fork of [RamenVR Autopilot](https://github.com/ramenvr/autopilot), based on upstream commit `48966d174939487cc759fdf8560f2bed6e717676`.
 
-![Aura by Ramen](./assets/aura-logo.png)
+This fork adapts Autopilot's playtesting tools to the shipped Windows game and its Unity 2022.3 modding environment. It preserves the upstream Apache-2.0 license and history. It is an independent personal project, unaffiliated with TVGS or RamenVR.
 
-Autopilot is a continually learning real-time general playtesting system. It supports Unreal Engine 5, Unity 6, and Godot 4 on both Windows and MacOS.
+## Schedule I path
 
-Install Autopilot into your project and let it learn your game, explore your levels, and improve its gameplay run after run.
+The shipped game cannot load an editor package. Use the dedicated [Schedule I adapter and setup guide](plugin/schedule-i/README.md) for the runtime path:
 
-## Installation
+- A dependency-free Python entry point for bounded local input replay, with foreground-process checks, cancellation and input release.
+- An optional MelonLoader observation bridge built against your own local game references. Game assemblies and assets are never distributed here.
+- Unity 2022.3 API compatibility changes in the original editor package for separate authoring projects. An authoring project is not required for the runtime adapter.
 
-You can find the installation instructions in the [Autopilot docs](https://www.tryaura.dev/documentation/autopilot/)
+The Schedule I entry point does not start Aura, sign in, install an agent, or call a model provider. Upstream model-driven exploration, harness generation and editor integrations remain separate capabilities; the Schedule I adapter is currently a local scripted testing foundation, not verified autonomous gameplay.
 
-### Installing pre-built packages
+## Compatibility and verification
 
-1. Download the latest Autopilot build for your game engine and OS from https://www.tryaura.dev/autopilot/.
+The initial target is Schedule I `0.4.7f12`, Unity `2022.3.62f2`, Windows x64, IL2CPP, with MelonLoader `0.8.0-ci.2575`. A separate Mono reference tree is available for build checks. See [runtime evidence](docs/runtime-evidence.md) for the distinction between observed versions, offline validation and pending game tests.
 
-2. Install Autopilot into your project.
+**Status: experimental.** The [validation record](docs/validation.md) covers 14 passing offline tests, both observer builds and a Unity 2022.3 source API check. These checks do not establish in-game compatibility. No mod was installed into the live game and no gameplay automation was run during the initial port. Follow the adapter guide's manual acceptance checklist in a disposable solo save before relying on it.
 
-   **Unreal** (v5.4-5.8)
-   1. Unzip the download. Move `Autopilot/` into your project's `Plugins/` folder (create a `Plugins/` folder yourself if your project doesn't have one yet). You should therefore have `<YourProject>/Plugins/Autopilot/Autopilot.uplugin`.
-   2. Open your project. Click the orange Autopilot icon to open Autopilot.
+## Upstream capabilities
 
-   **Unity** (v6 or later)
-   1. Unzip the download. It should contain the file `com.ramenvr.autopilot-<version>.tgz`.
-   2. Open your project. In Window > Package Management > Package Manager, choose + > Install package from tarball..., and pick that file.
-   3. Open Window > Autopilot.
+The [preserved upstream README](README.upstream.md) describes the original Unreal, Unity and Godot system, including its optional hosted services and account flows. Those instructions are not the Schedule I setup path. The original [contributor guide](CONTRIBUTING.md) and [license](LICENSE) remain available.
 
-   **Godot** (v4.7 or later)
-   1. Unzip the download. Move `autopilot/` into your project's `addons/` folder.
-   2. Open your project. Enable Autopilot in Project > Project Settings > Plugins. The Autopilot dock appears on the right.
-
-3. Follow the Autopilot setup flow.
-   1. We recommend using Autopilot with your Aura account. Click `Create Account` if you don't yet have an Aura account, or `Sign in` if you are a returning user.
-   2. Autopilot runs its setup, and finally redirects you to the signup/signin page. Complete your signin/signup process.
-   3. Upon successful authentication, you should see the "Agent service ready" page. Click Continue.
-   4. You have the option to enable/disable sharing your runs to improve Autopilot. As the developers of Autopilot, we would of course appreciate your enabling this!
-   5. (Optional) Run the 10-minute exploration run to populate your Autopilot project memory. It is safe to skip this and jump straight to sending your own prompt.
-   6. Prompt Autopilot! See the types of prompts you can try in [Usage](./README.md#usage).
-
-### Installing from source
-
-You can install Autopilot from source. This is supported for Unreal Engine only. This method allows you to build Autopilot against an Unreal source build, and places the Autopilot plugin into your Unreal project's Plugins folder automatically.
-
-```powershell
-git clone https://github.com/ramenvr/autopilot.git
-cd autopilot
-powershell -ExecutionPolicy Bypass -File tools\build_unreal.ps1 `
-  -EngineDir "C:\path\to\UnrealEngine" `
-  -PluginsDir "C:\path\to\YourProject\Plugins"
-```
-
-Once that has completed, follow the Autopilot setup flow as shown in Step 3 of [Installing pre-built packages](./README.md#installing-pre-built-packages).
-
-## Usage
-
-The main way to use Autopilot is through the **Autopilot plugin** in your editor. This works in Unreal Engine 5, Unity 6, and Godot 4 on both Windows and MacOS. This path uses your Aura plan, or your BYOK API keys.
-
-Alternative ways to use Autopilot include:
-
-- **In Aura**: You can also use Autopilot in Aura. Only Unreal and Unity are supported through this path. This path uses your Aura plan.
-- **In Claude Code / Codex**: You can use Autopilot through Claude Code and Codex via Autopilot's skills and MCP server. To set this up, run `autopilot connect claude` and/or `autopilot connect codex` in your terminal, then prompt Claude Code / Codex to "Use Autopilot to ...". This path uses your own Claude/ChatGPT subscription.
-
-An Autopilot prompt is one of 4 types:
-
-- **Exploration**, e.g. "Explore the crafting system in Lvl_Main."
-- **Testing**, e.g. "Go through the currently open level and tell me everything that looks wrong."
-- **Verification**, e.g. "Verify that the tree shakes when you hit it with an axe."
-- **Goal**, "Kill the boss while keeping your health above 20% of its maximum value."
-
-For every prompt, Autopilot will automatically launch a PIE window and start reading your project's source code, probe PIE, and start playing according to your prompt. Autopilot plays by using an LLM coding agent to craft harnesses for a decision model according to what it knows about your game, and requests decisions (action choices) from the decision model during gameplay. Once Autopilot is done, the PIE window will close automatically, and Autopilot generates a report for you.
-
-Your first few runs allow Autopilot to learn about your game as it gradually populates its memory. Expect some suboptimal behavior for the first few harness attempts. **Autopilot visibly improves the more it plays your game**, and later harness attempts and runs both take a shorter time to complete a given task, as well as exhibit more intelligent behavior (e.g. faster dodging, equipping better weapons, playing smarter strategies, better aiming).
-
-## Uninstallation
-
-1. In Autopilot, go to Settings and click Uninstall. By default, Autopilot keeps your project's memories; you can choose to delete memories instead (this is a destructive action).
-2. Remove the plugin from each project: Unreal, close the editor and delete `Plugins/Autopilot/`; Unity, remove the Autopilot package in the Package Manager; Godot, disable Autopilot in Project > Project Settings > Plugins, then delete `addons/autopilot/`.
-
----
-
-## Contributing
-
-Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to set up a development environment, run the tests, and add support for a new engine. Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## License
-
-[Apache License 2.0](LICENSE). The plugins bundle fonts under the SIL Open Font License; see each font's `OFL` file.
+Development is on the `schedule-i` branch. Push changes only to your own fork; keep the `ramenvr/autopilot` remote for fetching upstream updates.

@@ -6,6 +6,7 @@
 // and the client connects again afterwards with hello {"resume": <session>}, so the brain keeps the same run; requests
 // waiting on the change (session start) are answered on the new connection.
 
+// Modified for the personal Schedule I fork: no automatic editor agent/service without explicit opt-in.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -44,6 +45,7 @@ namespace Autopilot.Playtest.Editor
 
         static EditorHost()
         {
+            if (!PersonalForkPolicy.EditorAgentEnabled) return;
             EditorApplication.update += Update;
             AssemblyReloadEvents.beforeAssemblyReload += BeforeReload;
             EditorApplication.playModeStateChanged += OnPlayMode;
@@ -77,6 +79,7 @@ namespace Autopilot.Playtest.Editor
 
         public static void Connect()
         {
+            if (!PersonalForkPolicy.EditorAgentEnabled) return;
             if (Uninstall.Holds) return;  // (Autopilot is being removed from this computer, or was: Uninstall.cs)
             SessionState.EraseBool(DisconnectedKey);
             var s = PlaytestSettings.Get();

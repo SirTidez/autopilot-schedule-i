@@ -2,6 +2,7 @@
 // and the policy log; the Settings page; the first-run setup until it is done. The agent service enters play mode when it needs the game. The content is AutopilotView (UI
 // Toolkit); the model, kept across script reloads, is AutopilotSession.
 
+// Modified for the personal Schedule I fork: show the local-only policy before upstream onboarding UI.
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -44,6 +45,11 @@ namespace Autopilot.Playtest.Editor
 
         void CreateGUI()
         {
+            if (!PersonalForkPolicy.EditorAgentEnabled)
+            {
+                rootVisualElement.Add(new HelpBox(PersonalForkPolicy.Notice, HelpBoxMessageType.Info));
+                return;
+            }
             view = new AutopilotView
             {
                 SelectedId = selectedId, Tab = string.IsNullOrEmpty(tab) ? "result" : tab, Composing = composing,

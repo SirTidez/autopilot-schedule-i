@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework Condition="'$(RuntimeFlavor)' != 'Mono'">net6.0</TargetFramework>
+    <TargetFramework Condition="'$(RuntimeFlavor)' == 'Mono'">netstandard2.1</TargetFramework>
+    <AssemblyName>Autopilot.ScheduleI</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+    <DefineConstants Condition="'$(RuntimeFlavor)' == 'Mono'">$(DefineConstants);MONO</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ObserverMod.cs" />
+    <Reference Include="MelonLoader"><HintPath>$(LoaderDir)/MelonLoader.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(UnityRefs)/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeFlavor)' != 'Mono'">
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(LoaderDir)/Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(UnityRefs)/Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="CheckLocalReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(LoaderDir)/MelonLoader.dll')" Text="Set LoaderDir to the matching local MelonLoader runtime directory." />
+    <Error Condition="!Exists('$(UnityRefs)/UnityEngine.CoreModule.dll')" Text="Set UnityRefs to the matching Mono Managed or IL2CPP generated assemblies directory." />
+  </Target>
+</Project>

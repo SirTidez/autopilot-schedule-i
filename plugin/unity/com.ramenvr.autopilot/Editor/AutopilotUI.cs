@@ -2,6 +2,7 @@
 // icon, the buttons' glyphs, the spinner, the tick, stacked probability bars and the stage track, drawn with Painter2D;
 // and small element builders.
 
+// Modified for the personal Schedule I fork: Unity 2022.3 TextField compatibility.
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -207,15 +208,41 @@ namespace Autopilot.Playtest.Editor
             if (multiline)
             {
                 f.AddToClassList("multiline");
-                f.verticalScrollerVisibility = ScrollerVisibility.Auto;
+                FieldScroller(f, ScrollerVisibility.Auto);
             }
             if (!string.IsNullOrEmpty(placeholder))
             {
-                f.textEdition.placeholder = placeholder;
-                f.textEdition.hidePlaceholderOnFocus = true;
+                SetPlaceholder(f, placeholder);
             }
             f.RegisterValueChangedCallback(e => changed?.Invoke(e.newValue));
             return f;
+        }
+
+        public static void FieldScroller(TextField field, ScrollerVisibility visibility)
+        {
+#if UNITY_6000_0_OR_NEWER
+            field.verticalScrollerVisibility = visibility;
+#endif
+        }
+
+        public static string Placeholder(TextField field)
+        {
+#if UNITY_6000_0_OR_NEWER
+            return field.textEdition.placeholder;
+#else
+            return field.tooltip;
+#endif
+        }
+
+        public static void SetPlaceholder(TextField field, string text)
+        {
+#if UNITY_6000_0_OR_NEWER
+            field.textEdition.placeholder = text;
+            field.textEdition.hidePlaceholderOnFocus = true;
+#else
+            // 2022.3 has no native placeholder. Keep the hint available without changing the field's value.
+            field.tooltip = text;
+#endif
         }
 
         /// <summary>A whole number in a field (mono, right-aligned): Minutes, Time limit.</summary>

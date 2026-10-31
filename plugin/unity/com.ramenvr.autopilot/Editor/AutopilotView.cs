@@ -3,6 +3,7 @@
 // window is wide, a dropdown when it is narrow; the Settings page (AutopilotView.Settings.cs), the first-run setup
 // (AutopilotView.Setup.cs) and, once Autopilot is removed from this computer, how that went (AutopilotView.Remove.cs).
 
+// Modified for the personal Schedule I fork: Unity 2022.3 TextField compatibility.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -114,7 +115,7 @@ namespace Autopilot.Playtest.Editor
             }, SteerHint);
             steerField.AddToClassList("grow");
             steerField.AddToClassList("steer-input");
-            steerField.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            FieldScroller(steerField, ScrollerVisibility.Hidden);
             steerField.RegisterCallback<KeyDownEvent>(e =>
             {
                 // Enter sends
@@ -231,7 +232,7 @@ namespace Autopilot.Playtest.Editor
             // (stopping: the box and Steer locked until the run ends)
             steer.Q(className: "steer-box")?.EnableInClassList("locked", stopping);
             if (steerField.enabledSelf == stopping) steerField.SetEnabled(!stopping);
-            if (steerField.textEdition.placeholder != SteerHint) steerField.textEdition.placeholder = SteerHint;
+            if (Placeholder(steerField) != SteerHint) SetPlaceholder(steerField, SteerHint);
             var tip = now || !show || stopping ? "" : SteerWaitHint;
             if (steerButton.tooltip != tip) steerButton.tooltip = tip;
             steerButton.SetEnabled(now && !string.IsNullOrWhiteSpace(steerField.value));

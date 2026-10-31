@@ -18,6 +18,7 @@
 // pipes this editor reads, so a script reload (which ends every managed reader) never stalls or breaks them; what is
 // going is kept across reloads in SessionState.
 
+// Modified for the personal Schedule I fork: prevent implicit setup/service start.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -102,6 +103,7 @@ namespace Autopilot.Playtest.Editor
 
         static AgentService()
         {
+            if (!PersonalForkPolicy.EditorAgentEnabled) return;
             EditorApplication.update += Tick;
             AssemblyReloadEvents.beforeAssemblyReload += Save;
             Restore();
@@ -546,6 +548,7 @@ namespace Autopilot.Playtest.Editor
         /// say it isn't installed. Never starts a second while one is starting or announced.</summary>
         public static void Start()
         {
+            if (!PersonalForkPolicy.EditorAgentEnabled) return;
             if (Current == Phase.Starting || Current == Phase.Installing) return;
             if (Uninstall.Holds) return;  // (Autopilot is being removed from this computer, or was: Uninstall.cs)
             var next = Decide(Here(), out var command, out var announced);
@@ -700,6 +703,7 @@ namespace Autopilot.Playtest.Editor
         /// that one starts instead.</summary>
         static void Install(bool update)
         {
+            if (!PersonalForkPolicy.EditorAgentEnabled) return;
             if (Current == Phase.Starting || Current == Phase.Installing) return;
             if (Uninstall.Holds) return;
             var dir = InstallerDir();

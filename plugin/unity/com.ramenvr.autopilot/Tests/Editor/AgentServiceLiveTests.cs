@@ -4,6 +4,7 @@
 // the replace path's stop: only the process that wrote brain.json (it started before brain.json's "started").
 // Everything happens in a temporary folder (Aura.FolderOverride), never the user's Autopilot folder. Ignored unless
 // RG_PYTHON names a Python to run the fake with.
+// Modified for the personal Schedule I fork: also require explicit editor-agent opt-in.
 
 using System;
 using System.Collections;
@@ -17,6 +18,13 @@ namespace Autopilot.Playtest.Tests
 {
     public class AgentServiceLiveTests
     {
+        [SetUp]
+        public void RequireExplicitEditorAgentOptIn()
+        {
+            if (!PersonalForkPolicy.EditorAgentEnabled)
+                Assert.Ignore("AUTOPILOT_ENABLE_EDITOR_AGENT=1 is required for live service tests in this personal fork");
+        }
+
         static IEnumerator Until(Func<bool> done, string what, double seconds)
         {
             var end = DateTime.UtcNow.AddSeconds(seconds);

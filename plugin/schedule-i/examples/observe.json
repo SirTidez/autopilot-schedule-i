@@ -1,0 +1,4 @@
+[
+  {"type": "request", "id": 1, "op": "context", "args": {}},
+  {"type": "request", "id": 2, "op": "ping", "args": {}}
+]

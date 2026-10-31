@@ -1,0 +1,14 @@
+Autopilot for Schedule I
+
+This personal fork by SirTidez includes Autopilot from RamenVR:
+https://github.com/ramenvr/autopilot
+Initial upstream revision: 48966d174939487cc759fdf8560f2bed6e717676
+
+Original source and notices remain under the Apache License, Version 2.0.
+The LICENSE file is preserved unchanged.
+
+Schedule I adapter, observation bridge, Unity 2022.3 compatibility changes,
+and personal-fork documentation added in 2026 are also Apache-2.0 licensed.
+
+Schedule I and its game assets/assemblies are not included in this fork.
+This project is independent of TVGS and RamenVR and does not imply endorsement.

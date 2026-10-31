@@ -18,6 +18,7 @@
 // four steps in one column, the run's id line with Run again, Copy report and Run folder as icons on its row (the
 // prompt close under it), and the composer's link on Disconnect's row.
 
+// Modified for the personal Schedule I fork: placeholders use the 2022.3 compatibility helper.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -263,7 +264,7 @@ namespace Autopilot.Playtest.Tests
             foreach (var key in host.Query<TextField>(className: "key-input").ToList())
             {
                 if (!Shown(key, host)) continue;
-                var placeholder = key.textEdition.placeholder;
+                var placeholder = AutopilotUI.Placeholder(key);
                 var room = PlaceholderRoom(key);
                 var need = PlaceholderNeeds(key);
                 if (string.IsNullOrEmpty(placeholder) || float.IsNaN(room)) continue;
@@ -274,7 +275,7 @@ namespace Autopilot.Playtest.Tests
             foreach (var box in host.Query<TextField>(className: "prompt-input").ToList())
             {
                 if (!Shown(box, host)) continue;
-                var placeholder = box.textEdition.placeholder;
+                var placeholder = AutopilotUI.Placeholder(box);
                 var input = box.Q(className: "unity-base-text-field__input");
                 var text = box.Q<TextElement>();
                 if (string.IsNullOrEmpty(placeholder) || input == null || text == null) continue;
@@ -316,7 +317,7 @@ namespace Autopilot.Playtest.Tests
         static float PlaceholderNeeds(TextField f)
         {
             var text = f.Q<TextElement>();
-            return text == null ? 0 : text.MeasureTextSize(f.textEdition.placeholder ?? "", 0, VisualElement.MeasureMode.Undefined, 0, VisualElement.MeasureMode.Undefined).x;
+            return text == null ? 0 : text.MeasureTextSize(AutopilotUI.Placeholder(f) ?? "", 0, VisualElement.MeasureMode.Undefined, 0, VisualElement.MeasureMode.Undefined).x;
         }
 
         /// <summary>The words shown (labels, the fields' placeholders), as one text.</summary>
@@ -327,7 +328,7 @@ namespace Autopilot.Playtest.Tests
             {
                 if (!Shown(e, host)) continue;
                 if (e is TextElement t && !string.IsNullOrEmpty(t.text)) words.Add(t.text);
-                if (e is TextField f && !string.IsNullOrEmpty(f.textEdition.placeholder)) words.Add(f.textEdition.placeholder);
+                if (e is TextField f && !string.IsNullOrEmpty(AutopilotUI.Placeholder(f))) words.Add(AutopilotUI.Placeholder(f));
             }
             return string.Join("\n", words).Replace(((char)0x200B).ToString(), "");
         }
@@ -503,8 +504,8 @@ namespace Autopilot.Playtest.Tests
                     TextField decision = keys[0], key = keys[1];
                     Assert.AreSame(key, pick.parent.Q<TextField>(), $"the LLM key beside the dropdown {at}");
                     Assert.IsTrue(decision.isPasswordField && key.isPasswordField);
-                    Assert.AreEqual("Optional", decision.textEdition.placeholder);
-                    Assert.AreEqual("Optional", key.textEdition.placeholder);
+                    Assert.AreEqual("Optional", AutopilotUI.Placeholder(decision));
+                    Assert.AreEqual("Optional", AutopilotUI.Placeholder(key));
 
                     Rect d = decision.worldBound, a = agent.worldBound, p = pick.worldBound, k = key.worldBound, row = pick.parent.worldBound;
                     var box = decision.parent;
@@ -528,7 +529,7 @@ namespace Autopilot.Playtest.Tests
                         var room = PlaceholderRoom(f);
                         var need = PlaceholderNeeds(f);
                         Assert.Greater(need, 0f, $"the placeholder measured {at}");
-                        Assert.LessOrEqual(need, room + 0.5f, $"\"{f.textEdition.placeholder}\" fits its input {at}");
+                        Assert.LessOrEqual(need, room + 0.5f, $"\"{AutopilotUI.Placeholder(f)}\" fits its input {at}");
                     }
                     foreach (var (dropdown, names) in new[] { (agent, agentNames), (pick, providerNames) })
                     {
@@ -558,7 +559,7 @@ namespace Autopilot.Playtest.Tests
             Assert.AreEqual("Anthropic", Provider().value);
             Assert.IsFalse(Provider().enabledInHierarchy, "Claude Code's provider locked");
             Assert.AreEqual(1f, Provider().resolvedStyle.opacity, 0.01f, "a locked provider isn't faded");
-            Assert.AreEqual("Optional", Provider().parent.Q<TextField>().textEdition.placeholder);
+            Assert.AreEqual("Optional", AutopilotUI.Placeholder(Provider().parent.Q<TextField>()));
             Assert.IsEmpty(Problems("step 1, Claude Code", new Vector2Int(360, 640), out _));
             Agent().value = "Codex";
             Layout();
@@ -1818,7 +1819,7 @@ namespace Autopilot.Playtest.Tests
             Show(new Vector2Int(360, 640), null, v => v.TestShowComposer(ServiceUrl));
             var box = host.Q<TextField>(className: "prompt-input");
             Assert.IsNotNull(box);
-            Assert.AreEqual(AutopilotView.PromptPlaceholder, box.textEdition.placeholder);
+            Assert.AreEqual(AutopilotView.PromptPlaceholder, AutopilotUI.Placeholder(box));
             VisualElement RunRow() => host.Q(className: "run-row");
             VisualElement Minutes() => host.Q(className: "minutes-row");
             // (Run sits in the box's last row, the Time limit before it, whatever is typed)
@@ -2447,7 +2448,7 @@ namespace Autopilot.Playtest.Tests
                     // Rollout, its tooltip saying so before
                     Assert.AreEqual(DisplayStyle.Flex, row.resolvedStyle.display, $"the steer row shown {at}");
                     Assert.IsTrue(field.enabledInHierarchy, $"the box can be typed in {at}");
-                    Assert.AreEqual(AutopilotView.SteerHint, field.textEdition.placeholder, at);
+                    Assert.AreEqual(AutopilotView.SteerHint, AutopilotUI.Placeholder(field), at);
                     Assert.AreEqual("You can steer once the game is playing", AutopilotView.SteerWaitHint);
                     Assert.AreEqual(rollout ? "" : AutopilotView.SteerWaitHint, button.tooltip, at);
                     // What was typed stays, and the button can't send it before the Rollout

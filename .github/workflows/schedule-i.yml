@@ -1,0 +1,31 @@
+name: Schedule I adapter
+
+on:
+  push:
+    branches: [schedule-i]
+    paths:
+      - "autopilot/schedule_i.py"
+      - "plugin/schedule-i/**"
+      - ".github/workflows/schedule-i.yml"
+  pull_request:
+    branches: [schedule-i]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline safety and protocol tests (standard library only)
+        run: python -m unittest discover -s plugin/schedule-i/tests -v
+      - name: Validate replay without opening or controlling the game
+        run: python -m autopilot.schedule_i plugin/schedule-i/examples/observe.json
+
+# Proprietary game and loader references are intentionally absent from CI.
+# Build the optional observer locally against explicitly supplied references.

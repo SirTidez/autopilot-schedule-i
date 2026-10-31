@@ -13,6 +13,8 @@ permissions: {}
 
 jobs:
   dispatch:
+    # This upstream integration must never dispatch from a personal fork.
+    if: github.repository == 'ramenvr/autopilot'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@v1

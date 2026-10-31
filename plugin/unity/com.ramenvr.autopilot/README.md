@@ -1,5 +1,23 @@
 # Autopilot for Unity (com.ramenvr.autopilot)
 
+> Modified in the personal Schedule I fork. This package now declares Unity 2022.3 as its minimum and
+> guards the Rigidbody velocity API across 2022.3/Unity 6. Editor compilation and live engine tests remain
+> separate validation steps; declaring the minimum is not evidence of runtime compatibility.
+> The upstream editor agent/service and onboarding are disabled by default. Explicitly set
+> `AUTOPILOT_ENABLE_EDITOR_AGENT=1` before launching Unity to enable the upstream behavior described below,
+> which can use external model services. Retail Schedule I uses [the separate local runtime adapter](../../schedule-i/README.md).
+> The original upstream instructions below are retained as reference and describe enabled upstream features.
+
+For the 2022.3 authoring path, the package declares Input System 1.7.0, uGUI 1.0.0, TextMeshPro 3.0.6 and
+Mono Cecil 1.11.6 dependencies because its assembly definitions name those assemblies. Importing the package can
+resolve these dependencies through Unity Package Manager; no package import or project modification was performed
+during the initial port. Preserve your project's input handling setting: do not accept an automatic switch away
+from the legacy Input Manager for a Schedule I authoring project. If you deliberately need both input systems,
+Unity exposes the `Both` setting under Active Input Handling; see the
+[official Input System installation guide](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.7/manual/Installation.html).
+This fork's declared dependencies target 2022.3; importing into Unity 6 projects that already use uGUI 2.x/TMP
+requires a separate package-resolution check.
+
 Autopilot is AI playtesting for Unity 6 games. You describe what to test in one box, and an AI agent plays your game to
 check it; the agent service reads which of four types of prompt your words are:
 

@@ -2,6 +2,7 @@
 // A "thing" is a GameObject as a player tells things apart: a renderer's object, taken up through its parents to the
 // highest one that isn't a plain group (an object with nothing but a Transform, like "Pickups" or "Environment").
 
+// Modified for the personal Schedule I fork: Unity 2022.3 physics compatibility.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -149,7 +150,7 @@ namespace Autopilot.Playtest
                 if (vp.x < 0 || vp.x > 1 || vp.y < 0 || vp.y > 1) item["partly_in_view"] = true;
 #if AUTOPILOT_PHYSICS
                 var rb = s.Thing.GetComponentInParent<Rigidbody>();
-                if (rb != null && !rb.isKinematic && rb.linearVelocity.magnitude > 0.01f) item["speed"] = Math.Round(rb.linearVelocity.magnitude * Frame.Scale);
+                if (rb != null && !rb.isKinematic && Loaded.Velocity(rb).magnitude > 0.01f) item["speed"] = Math.Round(Loaded.Velocity(rb).magnitude * Frame.Scale);
                 if (player != null)
                 {
                     var blocks = s.Thing.GetComponentsInChildren<Collider>().Any(c => c.enabled && !c.isTrigger);

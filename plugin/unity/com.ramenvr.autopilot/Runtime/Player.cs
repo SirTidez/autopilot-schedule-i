@@ -2,6 +2,7 @@
 // the one tagged "Player", else the one with a PlayerInput, else the one with a CharacterController (the main camera's
 // first), else the main camera's top object with a Rigidbody. Its eyes: the main camera (else the camera under it).
 
+// Modified for the personal Schedule I fork: Unity 2022.3 physics compatibility.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -147,7 +148,7 @@ namespace Autopilot.Playtest
             var cc = player.GetComponent<CharacterController>();
             if (cc != null && cc.enabled) return cc.velocity;
             var rb = player.GetComponent<Rigidbody>();
-            if (rb != null) return rb.linearVelocity;
+            if (rb != null) return Loaded.Velocity(rb);
 #endif
             // From where it was at an earlier frame
             var now = Time.timeAsDouble;
