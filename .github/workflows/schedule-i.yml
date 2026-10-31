@@ -6,11 +6,14 @@ on:
     paths:
       - "autopilot/schedule_i.py"
       - "autopilot/schedule_i_harness.py"
+      - "autopilot/schedule_i_acceptance.py"
+      - "autopilot/cli.py"
       - "autopilot/runtime.py"
       - "autopilot/kit/**"
       - "autopilot/bridge.py"
       - "autopilot/engines/**"
       - "plugin/schedule-i/**"
+      - "tools/schedule_i_test_session.py"
       - ".github/workflows/schedule-i.yml"
   pull_request:
     branches: [schedule-i]
